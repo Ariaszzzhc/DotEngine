@@ -763,7 +763,7 @@ synchronization; malformed/unsupported combinations fail before replacement.
 
 Ray/sphere hits, native proxy manifolds and virtual contact events include character-controller
 entities. Sphere filters use `ignoreEntity` for either synchronized collider kind;
-Prism Relay excludes its own capsule while sweeping the shoulder camera. Native
+a following camera can exclude its owner's capsule. Native
 support identity maps both rigid bodies and live peer characters to groundEntity.
 Rigid-body mutation methods still reject character entities.
 
@@ -995,8 +995,8 @@ Doppler again. This explicit game-wide request preserves voices, cursors, gain a
 generation, and does not change queued PCM or reset/heal the backend. Stats report
 `motionResetPending` until successful synchronization; failed or invalid syncs retain
 the request, and a successful full native reset clears it. Ordinary unmarked
-out-of-range velocities remain errors. Prism Relay requests this after character
-placement so its separately following listener is not inferred as extreme motion.
+out-of-range velocities remain errors. Callers can request this after character
+placement so a separately following listener is not inferred as extreme motion.
 
 Native GameSession audio remains `prepared` during script construction and Start:
 autoplay/play controls establish voice state without advancing source frames or
@@ -1192,5 +1192,5 @@ neighbors; `agents()` lists controlled characters, `stop()` releases velocity ow
 Jolt owns actual poses and grounded arrival. Pause/single-step share game scheduling;
 reload retains native movement and permits observational state reads during migration.
 See [navigation contracts](Navigation.md) for strict editor/player operations, budgets,
-profile/geometry checks and limitations. PrismRelay submits station intent; FeatureLab
-covers unbound reads, idempotent stop and catchable unavailable move/route errors.
+profile/geometry checks and limitations. Feature Lab covers unbound reads,
+idempotent stop and catchable unavailable move/route errors.

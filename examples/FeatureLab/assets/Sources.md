@@ -8,8 +8,6 @@ Modular Airduct Rectangular 01 (CC0):
 - Retained license: [PolyHaven-LICENSE.txt](PolyHaven-LICENSE.txt)
 - Native mesh SHA-256: `94e135a1648c690240d2bb0b64f94565a793b9b528273575ee6f0aacc5ae362a`
 
-The ordinary editor importer produced this resource from the retained upstream
-glTF in Prism Relay's `assets/models/`. Original URLs, input sizes and hashes are
-in that project's `assets/models/PolyHavenSources.json`. This copy corresponds to
-`assets/airducts/meshes/0.dotmesh` and needs no source project to open/run/export.
+The ordinary editor importer produced this native resource from Poly Haven's
+CC0 source. It needs no external source project to open, run or export.
 It uses Feature Lab's saved tint and the same geometry for rendering and collision.

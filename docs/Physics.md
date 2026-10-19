@@ -83,8 +83,8 @@ asset, then ordinary Apply/undo/save publishes it. A collision-only native resou
 can also be selected through the mesh asset field. The same operation is exposed
 through the [workspace agent interface](Editor.md). Feature Lab's hollow imported
 duct demonstrates mesh properties, failed writes, surface hits and unobstructed
-ray/sphere queries through its opening; Prism Relay uses authored geometry for
-floor/walls, equipment, the relay column and traversal steps.
+ray/sphere queries through its opening. Games may use authored static geometry
+for floors, walls and traversal obstacles.
 
 ## Continuous collision detection
 

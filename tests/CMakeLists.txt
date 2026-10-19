@@ -228,21 +228,11 @@ target_compile_definitions(DotExportTests PRIVATE
 add_dependencies(DotExportTests DotRuntimeKit)
 dotDiscoverTests(DotExportTests LABELS "integration;process;compiler" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 
-add_executable(DotExampleTests main.cpp ExampleTests.cpp ShoulderCameraTests.cpp)
-target_link_libraries(DotExampleTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
-target_compile_definitions(DotExampleTests PRIVATE
-    DOT_EDITOR_FONT="${DOT_EDITOR_FONT}"
-    DOT_EXAMPLE_PROJECT="${CMAKE_BINARY_DIR}/examples/PrismRelay"
-    DOT_EXAMPLE_SOURCE="${CMAKE_SOURCE_DIR}/examples/PrismRelay"
-    DOT_LAB_SOURCE="${CMAKE_SOURCE_DIR}/examples/FeatureLab"
-    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
-add_dependencies(DotExampleTests DotExamples)
-dotDiscoverTests(DotExampleTests LABELS "integration;compiler" PROPERTIES TIMEOUT 60)
-
 add_executable(DotFeatureLabTests main.cpp FeatureLabTests.cpp)
 target_link_libraries(DotFeatureLabTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotFeatureLabTests PRIVATE
     DOT_FEATURE_LAB="${CMAKE_BINARY_DIR}/examples/FeatureLab"
+    DOT_FEATURE_LAB_SOURCE="${CMAKE_SOURCE_DIR}/examples/FeatureLab"
     DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotFeatureLabTests DotFeatureLab)
@@ -251,9 +241,9 @@ dotDiscoverTests(DotFeatureLabTests LABELS "integration;compiler" PROPERTIES TIM
 add_executable(DotTemplateTests main.cpp TemplateTests.cpp)
 target_link_libraries(DotTemplateTests PRIVATE DotEngine doctest::doctest)
 target_compile_definitions(DotTemplateTests PRIVATE
-    DOT_TEMPLATE_PROJECT="${CMAKE_BINARY_DIR}/examples/PrismRelay"
+    DOT_TEMPLATE_PROJECT="${CMAKE_BINARY_DIR}/examples/FeatureLab"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
-add_dependencies(DotTemplateTests DotExamples)
+add_dependencies(DotTemplateTests DotFeatureLab)
 dotDiscoverTests(DotTemplateTests LABELS "integration;compiler" PROPERTIES TIMEOUT 30)
 
 add_executable(DotProjectActionTests main.cpp ProjectActionTests.cpp)

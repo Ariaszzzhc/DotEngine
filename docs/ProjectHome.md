@@ -2,7 +2,7 @@
 
 Starting DotEditor with no arguments opens the native project home. It opens an
 existing project folder or creates a validated project from Empty project
-(camera/cube/starter script), Prism Relay or Feature Lab. All three creation choices publish
+(camera/cube/starter script) or Feature Lab. Both creation choices publish
 one new folder under an existing parent, using the embedded engine modules and packaged compiler.
 Existing directories/files/symlinks are preserved. Select a project to enter the
 normal editor workspace; the home GUI/video resources release before that window
@@ -40,10 +40,10 @@ operation called by the native buttons and returns the normal project/scene JSON
 ```
 
 ```json
-{"command":"create","parent":"/existing/output","folder":"MyGame","name":"My Game","template":"prism"}
+{"command":"create","parent":"/existing/output","folder":"MyGame","name":"My Game","template":"lab"}
 ```
 
-Template IDs are blank, prism and lab. Open reads and validates without writing.
+Template IDs are blank and lab. Open reads and validates without writing.
 Creation copies rather than modifying the template. It
 validates metadata/scene, compiles actual TypeScript and checks static resources
 and compiled script setup before exclusive publication. It does not run arbitrary

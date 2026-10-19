@@ -1,11 +1,10 @@
 # Example and product workflow validation
 
 Feature Lab is an ordinary editable project at
-[examples/FeatureLab](../examples/FeatureLab/README.md), alongside
-[Prism Relay](../examples/PrismRelay/README.md). Build-generated copies live in
-build/<preset>/examples/. Project home uses the same example trees as templates.
-These projects demonstrate real engine behavior; they are not dedicated test
-executables or evidence that the large-game/editor goal is complete.
+[examples/FeatureLab](../examples/FeatureLab/README.md). Build-generated copies live in
+build/<preset>/examples/. Project home uses the same example tree as a template.
+It demonstrates real engine behavior; it is not a dedicated test
+executable or evidence that the large-game/editor goal is complete.
 
 Feature Lab includes camera projections, hierarchy, material/mesh resources,
 physics shapes/motions/contacts, audio, scripts and native animation playback.

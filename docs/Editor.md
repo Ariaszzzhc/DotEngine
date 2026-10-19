@@ -727,7 +727,7 @@ support opening an existing project and choosing a creation parent. Cancellation
 preserves the form; selection/errors use the shared validated project operations.
 
 DotEditor now opens a [native project home](ProjectHome.md) by default, with open
-and validated creation from the starter project, Prism Relay and Feature Lab.
+and validated creation from the starter project and Feature Lab.
 The GUI, direct JSON command and live mailbox share the same project operations.
 
 ## Material and direct light authoring

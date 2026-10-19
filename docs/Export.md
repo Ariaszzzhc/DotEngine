@@ -138,7 +138,7 @@ symlinks/Finder metadata, executable permissions, moved owners, manifest changes
 no overwrite, source preservation and failure after copying native files. Local
 validation is arm64 macOS; Windows/Linux remain unvalidated.
 
-The [Prism Relay example](Examples.md) is a complete ordinary project that can be
+The [Feature Lab example](Examples.md) is an ordinary project that can be
 edited, played and exported through these operations. Runtime window titles follow
 native scene names, allowing script-authored progress/status through the scene API.
 
@@ -294,8 +294,8 @@ work. Scene rehydration, script/VM/native service setup, activation and non-audi
 retirement still run on the owner and may delay rendering/replies. Native profiles
 retain actual fixed-time drops. See [replacement preparation](Editor.md#runtime-scene-changes) for
 validation, ownership and cancellation; this does not complete background streaming
-or broader game-specific restoration. Prism Relay supplies explicit checkpoints
-and native text feedback through [the shared HUD layer](GameUi.md).
+or broader game-specific restoration. Games can build checkpoints and native text
+feedback through [the shared HUD layer](GameUi.md).
 
 Native inspection also exposes `hudText.textureBytes`, `rasterizations`, `overflow`,
 `presentedScope` and `presentedRevision`. The latter two advance only after actual

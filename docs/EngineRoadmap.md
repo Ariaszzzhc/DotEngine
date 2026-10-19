@@ -1,8 +1,7 @@
 # Goal boundaries and implementation
 
-The user has resumed engine development after project cleanup. Completion is not
-defined around features already built or the number of tests. The original
-requirements remain:
+Completion is not defined around features already built or the number of tests.
+The current requirements are:
 
 - Capability to make large 3D games, including usable rendering, content production,
   resource/scene management and evidence from populated real projects.
@@ -13,20 +12,19 @@ requirements remain:
 - Engine-owned modules under the dot: namespace and extensionless relative project
   imports. The engine is unpublished: replace current structures cleanly rather
   than adding format versions or compatibility implementations.
-- Feature Lab as an editable capability showcase and Prism Relay as a realistic
-  science-fiction, non-shooting over-the-shoulder movement/jump template. Both
-  projects belong in examples/.
+- Feature Lab as the editable capability showcase in `examples/`. A separate
+  private repository owns the playable open-world survival-building game.
 
 | Area | Current implementation | Evidence still needed or unfinished work |
 | --- | --- | --- |
 | Rendering | PBR material/texture slots, HDRI IBL, mixed directional/point/spot soft shadows with a bounded atlas, local-face culling and retained unchanged depth pages, SSAO, HDR/tone mapping and opt-in renderer CPU/GPU sampling | Temporal quality, pooled submission, resource streaming and whole-application populated-scene frame costs |
 | Content/animation | Native resources, OBJ import, native glTF/GLB bundles with background first-import preparation and explicit no-replace publication, reviewed stable-layout reimport with retained file choices and revert, GPU skinning, saved typed flat animation controllers with native transition/fade clocks and shared graph authoring, animation cross-fades, isolated audition, live skeleton inspection, pose-seeded native clip creation, world-goal/pole two-bone pose construction with one undoable transform edit and explicit unreachable-goal reporting, staged clip libraries/node bindings, key editing/save/undo, shared multitrack dope sheet/range selection/density views, rational frame grids/stepping/anchor and per-key snapping, and atomic bulk deletion, native sampled curves, owned cubic derivative handle transactions, eight ordered native masked override/additive layers with validated fixed reference poses, independent clocks/weight fades, saved editor masks and live preview/game controls, and cross-track group key selection/retiming/relative TRS value adjustment and owned copy/paste across a player's clips shared with agents | Native pointer/rectangle/tangent acceptance, skeleton binding authoring, automatic reference alignment/contact IK, hierarchical state-machine workflows and scalability |
 | Physics/gameplay | Rigid bodies with linear CCD, static native triangle mesh colliders with preserved openings/signed nonuniform scale and shared Inspector/agent authoring, queries/contacts, saved Y-up character components, scene movement/jumping/stairs/slopes/platforms, native character query/contact proxies, unified virtual ground/wall/peer events, baked static routes, native path following/local reciprocal velocity avoidance from corrected-feet motion and script/Inspector/agent controls | Populated-game character scalability |
-| Game state | Shared JSON state/revision checks, atomic slots through a bounded native background FIFO with typed receipts/cancellation and revision-checked load publication, stable app IDs/user directories, built-in script services, isolated Play/editor-agent controls and Prism Relay's explicit grounded position/facing/orbit checkpoints; see [storage contracts](GameState.md) | Owner-thread snapshot/publication costs, shutdown draining, crash recovery/cloud persistence and broader game-specific restoration |
+| Game state | Shared JSON state/revision checks, atomic slots through a bounded native background FIFO with typed receipts/cancellation and revision-checked load publication, stable app IDs/user directories, built-in script services and isolated Play/editor-agent controls; see [storage contracts](GameState.md) | Owner-thread snapshot/publication costs, shutdown draining, crash recovery/cloud persistence and broader game-specific restoration |
 | Editor | Docked views, single-active scene-file create/open/save-as with shared agent forms, scene/resource/material authoring, picking/multiselection/gizmos, world-preserving hierarchy grouping/ungrouping/reparenting, reusable scene-content extraction/insertion, recursive linked source refresh with graph/cycle budgets, explicit moved/copied source association and atomic source-update batches sharing one native candidate/final validation, owned background source preparation with cancellation, exact dependency revalidation and stale document rejection, sealed CPU scene handoff with prepared history text and same-worker CPU scene retirement, paged override inspection/selective or full baseline revert/unlink, inline component override counts, whole-field baseline restore and conflict-checked field/whole-instance property and topology application to saved sources with stable addition promotion and prospective dependency validation, persisted entity allocation across reopen and layered source identities independent of working IDs, undo/redo, isolated Play, background scene graphics/skin preflight and initial animation decoding with old-game continuity, bounded asynchronous old-audio teardown, additive runtime saved-content composition with exact instance ownership, owner transactions that retain existing component descriptions, prepared animation/controller/collision/PCM adoption for new runtime content bindings and initial asynchronous editor Play/native project/game preparation with live status/cancellation, and shared script/Play/player controls, and export | Consistent production workflows, variants and selective topology application, automatic project-wide resource relocation, broader resource streaming, remaining owner-thread startup/service preparation and non-audio retirement/resource I/O and performance/debugging tools |
 | AI control | Product CLI, strict JSON operations and shared bounded local mailbox with persistent close/selection replies, explicit consumption/cleanup and dispatch backpressure; document/resource/Play operations, lightweight Play/player lifecycle/input status without whole-scene snapshots, and opt-in standalone inspection/input/game-data/scene/shutdown control, native focus requests and read-only native/GUI pointer diagnostics | Audit complete human/agent operation parity as workflows evolve; macOS virtual mouse evidence is limited by SDL global-state handling; no test-only substitutes |
-| Game UI | Scene-bound native .dotui layout authoring with node hierarchy/rectangles/undo/save and runtime overrides, scene-local native text/buttons with focus, pointer/keyboard activation and bounded action history, pinned fonts, bounded layout/cache, shared script/product controls and UI-revision-aware capture; native simulation pause, explicit single-step scheduling/status and unscaled frame callbacks support Prism Relay’s clickable/keyboard checkpoint menu; see [text contracts](GameUi.md) | Full shaping/bidi and asynchronous text preparation |
-| Example experience | Feature Lab and Prism Relay's textured maintenance character, native traversal, sphere-swept shoulder camera, imported industrial PBR equipment/ventilation and an editable eight-capsule maintenance crew bay with independent native rigs, station duties and playable scene switching | Finished realistic sci-fi character/environment art, dynamic navigation/off-mesh links, broader workflow and performance evidence |
+| Game UI | Scene-bound native .dotui layout authoring with node hierarchy/rectangles/undo/save and runtime overrides, scene-local native text/buttons with focus, pointer/keyboard activation and bounded action history, pinned fonts, bounded layout/cache, shared script/product controls and UI-revision-aware capture; native simulation pause, explicit single-step scheduling/status and unscaled frame callbacks; see [text contracts](GameUi.md) | Full shaping/bidi and asynchronous text preparation |
+| Example experience | Feature Lab validates engine components and SDK behavior through editable saved content | The separate game's production workflows, visual quality and large-world performance remain unproven |
 | Production evidence | Focused headless behavior/GPU tests and past macOS product checks | Real project workflow, stress/performance and shipping evidence beyond test counts |
 
 Native application CPU diagnostics now expose actual event/prepare/fixed/update/render
@@ -73,8 +71,7 @@ See [prepared geometry](Rendering.md#prepared-geometry-residency).
 
 Native offline motion retargeting now has explicit saved reference poses/name-checked
 mappings, bounded cancellable baking, Inspector/strict agent authoring and ordinary
-clip preview/Play/export. PrismRelay retains a reproducible 51-pair walk profile and
-aligned target scene alongside its unchanged main locomotion library. Automatic
+clip preview/Play/export. Automatic
 rest-pose alignment, contact/IK/proportion correction, root-motion physics and broader
 animation production tooling remain open. See [animation contracts](Animation.md).
 
@@ -101,8 +98,8 @@ IK and automatic retarget proportion correction remain open. See [pose contracts
 Paused clip authoring now keys a native two-bone solution directly into three bound
 rotation channels, with shared GUI/strict agent control, actual composed-preview
 verification before one resource-history commit, and ordinary save/audition/export.
-Prism Relay's editable reach retains two authored intermediate control points. This
-does not persist a world constraint during interpolation or gameplay; runtime
+The authored pose workflow does not persist a world constraint during interpolation
+or gameplay; runtime
 contact/foot IK and broader motion production remain open. See [keyed posing](Animation.md#keying-an-ik-pose--以-ik-姿态写键).
 
 
@@ -110,6 +107,5 @@ Native controller states now author a single clip or synchronized one-dimensiona
 motion, with bounded ordered points, explicit phase offsets, bind-pose fallback,
 phase-preserving axis changes and atomic cross-fade/layer composition. The editor
 and strict agent routes share resource forms/history/save and report actual applied
-weights separately from pending intent. Prism Relay uses measured movement speed
-for continuous Idle/Walk/Jog/Sprint weights. Multidimensional trees, automatic contact
+weights separately from pending intent. Multidimensional trees, automatic contact
 alignment, foot locking, root motion and final character/art quality remain open.

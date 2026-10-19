@@ -128,15 +128,3 @@ states permit only an available snapshot. Editor Pause simulation/Resume simulat
 buttons, Step simulation and these commands use the same product implementation. They do not change
 authoring history or dirty state. A successful request is a model change; inspect
 completed counters/poses over subsequent real frames to verify frozen simulation.
-
-Prism Relay opens a clickable and keyboard-operated checkpoint menu with M, releases
-relative-pointer
-capture, and renders native text. F6 saves an actually grounded point; F7 explicitly
-restores it while the menu remains open. M resumes and requests capture again.
-Airborne pause preserves the native airborne pose, so save still refuses it. The
-menu survives realm reload; a new scene starts closed. Native buttons support
-pointer release activation and Tab/ShiftTab plus Enter/Space. Return, Save and
-Restore queue intent for onFrame through the shared [HUD service](GameUi.md).
-Visual layout authoring remains unfinished.
-While this menu is open, N requests one native single step using the SDK. Held N
-does not repeat a press; the ordinary input watermark survives realm reload.

@@ -63,7 +63,6 @@ namespace Dot::Editor {
 
     auto catalog() -> Json {
       return Json::array({{{"id", "blank"}, {"name", "Camera and cube"}},
-                          {{"id", "prism"}, {"name", "Prism Relay character"}},
                           {{"id", "lab"}, {"name", "Component and SDK lab"}}});
     }
 
@@ -97,7 +96,7 @@ namespace Dot::Editor {
       Codec::requireFields(value, {"command", "parent", "folder", "name", "template"});
       const auto choice = value["template"].get<std::string>();
 
-      if (command != "create" || (choice != "blank" && choice != "prism" && choice != "lab")) {
+      if (command != "create" || (choice != "blank" && choice != "lab")) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown project command/template");
       }
 
@@ -136,8 +135,7 @@ namespace Dot::Editor {
                                             *compiler);
       }
 
-      auto source = Core::FileSystem::open(resources.root() / "templates"
-                                           / (choice == "prism" ? "PrismRelay" : "FeatureLab"));
+      auto source = Core::FileSystem::open(resources.root() / "templates/FeatureLab");
       return source ? Project::instantiateTemplate(*source, *parent, folder, name, *compiler)
                     : Core::Result<Project::Project>{std::unexpected(source.error())};
     } catch (const Json::exception& value) {
@@ -530,12 +528,11 @@ namespace Dot::Editor {
 
         control("browseParent");
         ImGui::TextUnformatted("Template");
-        constexpr const char* names[]{"Empty project", "Prism Relay", "Feature Lab"};
+        constexpr const char* names[]{"Empty project", "Feature Lab"};
         constexpr const char* descriptions[]{"Camera, cube and a starter script",
-                                             "Playable 3D sample project",
                                              "Engine capabilities and scripting examples"};
 
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < 2; ++i) {
           ImGui::PushID(i);
           const auto cursor = ImGui::GetCursorPos();
 
@@ -563,7 +560,7 @@ namespace Dot::Editor {
         ImGui::BeginDisabled(m_parent.empty() || m_folder.empty() || m_name.empty());
 
         if (primary("Create project", "create")) {
-          constexpr const char* ids[]{"blank", "prism", "lab"};
+          constexpr const char* ids[]{"blank", "lab"};
           action({{"command", "create"},
                   {"parent", m_parent},
                   {"folder", m_folder},

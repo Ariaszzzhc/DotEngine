@@ -46,7 +46,7 @@ TEST_CASE("home.shared_project_actions_create_validated_blank_game_and_lab") {
   Fixture fixture;
   auto resources = Core::FileSystem::open(DOT_EDITOR_RESOURCES).value();
 
-  for (const auto* choice : {"blank", "prism", "lab"}) {
+  for (const auto* choice : {"blank", "lab"}) {
     auto request = fixture.request(choice, choice);
     auto result = Editor::performProjectAction(resources, request.dump());
     REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
@@ -54,9 +54,7 @@ TEST_CASE("home.shared_project_actions_create_validated_blank_game_and_lab") {
     const auto expectedCount
         = std::string_view(choice) == "blank"
               ? 2
-              : Project::Project::open(
-                    resources.root() / "templates"
-                    / (std::string_view(choice) == "prism" ? "PrismRelay" : "FeatureLab"))
+              : Project::Project::open(resources.root() / "templates/FeatureLab")
                     ->loadStartup()
                     ->entityCount()
                     .value();
@@ -92,6 +90,9 @@ TEST_CASE("home.shared_project_actions_create_validated_blank_game_and_lab") {
 
   auto bad = fixture.request("other", "bad");
   CHECK_FALSE(Editor::performProjectAction(resources, bad.dump()));
+  bad = fixture.request("prism", "retired");
+  CHECK_FALSE(Editor::performProjectAction(resources, bad.dump()));
+  CHECK_FALSE(std::filesystem::exists(fixture.files().root() / "retired"));
   bad = fixture.request("blank", "../bad");
   CHECK_FALSE(Editor::performProjectAction(resources, bad.dump()));
   CHECK_FALSE(Editor::performProjectAction(resources, "{\"command\":\"open\",\"root\":1}"));

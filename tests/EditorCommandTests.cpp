@@ -427,13 +427,13 @@ TEST_CASE("editor_home_cli_actions_and_bad_budgets_share_project_operations") {
                       {"parent", utf(directory.root)},
                       {"folder", "from-home"},
                       {"name", "Home project"},
-                      {"template", "prism"}};
+                      {"template", "lab"}};
   REQUIRE(files.writeTextAtomic("request.json", request.dump()));
   auto result = command(directory, {"project-action", utf(resources), "request.json"}, true,
                         std::chrono::seconds{20});
   CHECK(result["project"]["name"] == "Home project");
   CHECK(result["scene"]["entities"].size()
-        == Dot::Project::Project::open(resources / "templates/PrismRelay")
+        == Dot::Project::Project::open(resources / "templates/FeatureLab")
                ->loadStartup()
                ->entityCount()
                .value());

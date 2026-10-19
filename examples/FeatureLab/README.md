@@ -147,8 +147,7 @@ available through dot:engine and the editor's shared component commands.
 The audit exercises the new component/state/control methods on a separate update
 from animation checks to respect the per-hook host-call bound. Headless behavior
 regressions cover real input, jumping, source hot reload without resetting motion,
-and landing. This is a component showcase; Prism Relay separately provides the
-rigged humanoid and shoulder-camera template, with final realistic art unfinished.
+and landing. This is a component showcase, not a finished character workflow.
 
 The physics audit also sweeps a real sphere onto the saved platform and verifies
 the obstacle identity, center, surface point and normal through physics.sphereCast.
@@ -160,8 +159,7 @@ Enable Game input during Play, then press M to toggle native mouse look. Escape
 or focus loss releases editor capture; re-enable Game input to resume. The Camera
 script rotates only on acknowledged native frames and consumes motion once per
 variable update. The standalone runtime also honors script capture requests while
-focused. This is a free-look input demonstration; Prism Relay demonstrates the
-shoulder camera and animated character, with finished realistic humanoid art pending.
+focused. This is a free-look input demonstration.
 
 
 ## Continuous collision detection
@@ -204,8 +202,8 @@ The ordinary SDK audit exercises `hud.label/snapshot/set/remove/clear` and leave
 bilingual native label and clickable button in Play and exported games. The audit
 also covers setButton/focus/activate/events/inputState and explicit text-input
 request/acknowledgement. Actual demo button actions increment hudButtonCount;
-the audit's own synthetic activation is excluded from that count. It shares the game text path
-with Prism Relay. The saved `assets/interface.dotui` adds a panel, caption and
+the audit's own synthetic activation is excluded from that count. The saved
+`assets/interface.dotui` adds a panel, caption and
 button editable in the UI panel. The audit exercises every `ui` API, atomic invalid
 updates and reserved keys; actual resource-button clicks update uiClickCount.
 
@@ -243,8 +241,7 @@ The Inspector can stage this collider from its rendered asset; Apply, undo and s
 share the normal scene transaction. Mesh colliders are static/solid only.
 
 `assets/collision-duct.dotmesh` is an unchanged native import of Poly Haven's
-CC0 Modular Airduct Rectangular 01 geometry, shared with Prism Relay's
-`assets/airducts/meshes/0.dotmesh`. Source, upstream inputs and license evidence are
+CC0 Modular Airduct Rectangular 01 geometry. Source and license evidence are
 recorded in [asset sources](assets/Sources.md).
 Native resource SHA-256: `94e135a1648c690240d2bb0b64f94565a793b9b528273575ee6f0aacc5ae362a`.
 
@@ -265,7 +262,8 @@ actual Play and relocated native exports.
 The navigation SDK inventory also exercises `navigation.stats()` returning null for
 this unbound scene, null movement state, an empty agent list, idempotent stop, and
 `navigation.route()`/`navigation.move()` producing explicit unavailable errors.
-Successful static-obstacle routes are demonstrated by PrismRelay's saved crew bay.
+Successful static-obstacle routes require an authored navigation surface and
+characters; this scene intentionally leaves navigation unbound.
 
 Glass's native controller now demonstrates synchronized 1D motion on the numeric
 Phase axis: two panel-turn samples at offsets 0 and 0.25. The audit submits Phase

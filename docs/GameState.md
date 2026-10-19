@@ -160,11 +160,8 @@ recovery are not claimed. Unconsumed failed writes/deletions make explicit close
 fail with context. Quiescent retirement may run on another thread; ordinary operations remain on the
 creator. After retirement, native retained service handles permit final memory observations and receipt collection; taking a load cannot apply retired data.
 
-Prism Relay polls on its unscaled frame hook, so paused menus remain responsive.
-It displays saving/loading until a terminal result, disables duplicate menu requests,
-retains its previously accepted checkpoint on failure, and preserves pending ticket/
-checkpoint data across source migration. Feature Lab also polls camera checkpoints;
-its SDK auditor sequences real file jobs over frames, handles legitimate revision
+Feature Lab polls camera checkpoints on its unscaled frame hook; its SDK auditor
+sequences real file jobs over frames, handles legitimate revision
 conflicts, and deletes its own demonstration slot without overwriting intervening
 live data.
 
@@ -184,12 +181,8 @@ implementation serves native GameData::perform and the live workspace:
 The opt-in standalone player exposes the same inner operations through
 `game-data(value)`; see [native product control](Export.md#opt-in-native-player-control).
 Its explicit app data directory persists across process restarts. Editor Play keeps
-its isolated temporary storage. Neither interface automatically restores a character.
-Prism Relay now supplies an explicit F6/F7 grounded resume-point schema and applies
-validated feet/facing/orbit with native character teleport. F7 does not replace
-unrelated current game-state keys or restore physics/animation clocks; startup is
-fresh until explicitly restored. Status is observable in `relayProgressStatus`.
-See the [template controls and limits](../examples/PrismRelay/README.md).
+its isolated temporary storage. Neither interface automatically restores a character;
+the game must validate and apply its own resume-point schema.
 
 Every outer request requires exactly command/session/value and a current Play
 session ID. Its response contains `ok` and the parsed `result`. Pending close and
@@ -242,8 +235,7 @@ Tests do not open desktop windows; actual editor checks use its product agent AP
 Storage I/O runs in the owned worker during gameplay. Snapshot serialization,
 validation/publication on the owner, shutdown draining, directory crash recovery,
 authentication/cloud sync, broader game-specific schemas and finished gameplay remain
-separate performance/capability boundaries. Prism Relay now displays controls and
-checkpoint success/failure through [native game text](GameUi.md); full diagnostics
-remain in relayProgressStatus. Its keyboard checkpoint menu uses the
-[native game clock](GameClock.md), so save/restore remains available during simulation pause. These contracts do not establish overall
+separate performance/capability boundaries. Games can display checkpoint feedback
+through [native game text](GameUi.md) and use the
+[native game clock](GameClock.md) during simulation pause. These contracts do not establish overall
 engine production readiness.

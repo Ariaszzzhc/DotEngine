@@ -16226,3 +16226,51 @@ toolchain commit and repeat appropriate product and platform checks after merge.
 项目现在由配置选择 LLVM Clang、LLD 与各平台标准库；macOS 的 SDL/Dawn ObjC 存根
 问题按实际链接失败修正。最终 Debug/Release 构建、CTest 与可迁移 kit 检查分别完成。
 Windows/Linux 尚无本阶段执行证据；两线合并后仍需组合验证。
+
+## 2026-10-19 — Separate the playable game / 独立游戏与示例分离
+
+Retire the in-repository PrismRelay project after the product direction changed to
+an independent private open-world survival-building game. Remove its 147 authored
+project files, generated-example target, project-home choice, editor resource and
+portable-distribution copies, and game-specific headless test source. Keep
+FeatureLab as the sole editable capability example. The generic template tests now
+copy FeatureLab, and a source-project open/compile check remains in its suite. The
+home operation rejects the retired `prism` template before creating a folder.
+Current guides and roadmap describe the new boundary; the chronological entries
+above remain records of what was tested before retirement, not current project
+paths. No PrismRelay asset was moved into the new game repository.
+
+The independent private repository now records a realistic post-collapse science-
+fiction direction: continuous terrain, modular building and an eventual persistent
+open world. Its first acceptance gate is exploration, gathering two resources,
+constructing a functional shelter and surviving a dust storm, including save,
+relaunch and standalone playback. These are goals, not implemented gameplay. A
+writable blank native project was created there through the actual Release editor;
+its initial camera/cube script is only a bootstrap and is not reported as a playable
+survival game.
+
+On arm64 macOS, the combined branch containing the toolchain repair configured and
+built Debug and Release in this worktree. Debug CTest passed 1738/1738 in 275.92
+seconds; Release/NDEBUG passed 1738/1738 in 37.71 seconds. The 33 fewer cases
+relative to the earlier 1771-case baseline reflect removed game-specific examples
+and one retained FeatureLab source-project check. Current labels include 593 unit,
+1145 integration and 186 offscreen GPU cases. Modified C++ files pass
+`clang-format --dry-run --Werror`; staged and unstaged diffs pass `git diff --check`.
+
+Actual Release product operations created the private bootstrap project, inspected
+and saved it, then reopened the saved scene with two entities. The native editor
+entered Play and reported 2066 frames and 1033 fixed steps without a fault
+or diagnostic before Stop. It exported a native package through the editor's
+strict operation. A relocated package ran `DotGame --frames 60` with exit code zero
+while the authoring project was temporarily unavailable, then the authoring path
+was restored. The relocated DotGame passes strict signature verification and loads
+its bundled LLVM runtime libraries through `@executable_path/lib`. The
+editor exited zero; its six replies were archived, acknowledged and cleared after
+a closed, fault-free status with no uncertain or unprocessed IDs. These checks
+establish the editor-to-export bootstrap, not survival gameplay, final graphics,
+world streaming, populated performance or human pointer acceptance. No new engine
+distribution archive was made. Windows and Linux were not executed.
+
+仓库示例现只保留 FeatureLab；新游戏在独立私有仓库定义末土写实科幻、连续地形、模块建造
+与沙尘暴庇护的首个可玩目标。Debug/Release 全量检查和真实编辑器到独立运行的基础流程已
+执行，但当前游戏项目仍只是初始场景，不能称为可玩的生存建造游戏或开放世界完成。

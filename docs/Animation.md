@@ -760,8 +760,8 @@ Scene references and source clips live under assets; entity values are canonical
 decimal strings, while mapping IDs and rate parts are unsigned numbers. Translation
 is null or {target,scale}. No imported-role guessing, format version or fallback.
 Profiles remain editable resources; exported runtime playback consumes the ordinary
-baked clip and needs no live retarget service. See the [editor workflow](Editor.md#animation-retarget-authoring)
-and PrismRelay's saved aligned reference/profile.
+baked clip and needs no live retarget service. See the
+[editor workflow](Editor.md#animation-retarget-authoring).
 
 先匹配源/目标的物理参考姿态，再显式映射名称和逻辑节点。原生烘焙传递相对参考的世界
 旋转差，保留目标骨长及实例放置；未映射后代保持目标参考。可选择一个映射根的显式比例

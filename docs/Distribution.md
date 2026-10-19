@@ -9,7 +9,7 @@ On macOS, double-click DotEngine.app in the extracted directory. It is a native
 application bundle and starts directly through Finder. Compiler, resources and
 libraries are inside the bundle, so the application can also move independently.
 Run DotEditor.exe on Windows or DotEditor on Linux. The native
-project home creates Camera and cube, Prism Relay or Feature Lab, or opens an
+project home creates Camera and cube or Feature Lab, or opens an
 existing project folder. Choose an existing parent directory and a new folder;
 existing destinations are preserved. Play clones the authored scene. The Resources
 page opens TypeScript in the system default application; hot reload retains compatible state. Export
@@ -26,8 +26,8 @@ are in `DotEngine.app/Contents/Resources/resources`. The bundle uses SDL's stand
 [resource-directory resolution](https://wiki.libsdl.org/SDL3/SDL_GetBasePath).
 The native distribution manifest records executable paths for automation.
 
-The top-level `examples/PrismRelay` and `examples/FeatureLab` directories are complete
-projects that import the embedded `dot:engine` module. Open these project folders
+The top-level `examples/FeatureLab` directory is a complete
+project that imports the embedded `dot:engine` module. Open this project folder
 directly, or create a writable copy using the home template choices. A project folder
 contains `project.dotproject`; its parent `examples` directory is not itself a project.
 Keep persistent authoring copies outside generated distribution/build directories.
