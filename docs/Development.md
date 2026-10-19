@@ -16374,9 +16374,9 @@ Merge the source-vendor build stage with the separate-game example retirement in
 the independent game-development branch. Resolve overlap by retaining the vendor
 LLVM/CMake configuration and removing the PrismRelay resource, distribution and
 test registrations. `examples/FeatureLab` is the only current source example;
-current example commands use `build/vendor-debug`. The old vcpkg checkout is
-preserved only in ignored build evidence and is absent from its former source
-location during configuration.
+at that milestone, example commands used `build/vendor-debug`. The old
+vcpkg checkout is preserved only in ignored build evidence and is absent
+from its former source location during configuration.
 
 A fresh arm64 macOS vendor Debug configure/build succeeds. Its CTest passes
 1738/1738 in 272.84 seconds. A fresh vendor Release/NDEBUG configure/build also
@@ -16505,3 +16505,34 @@ not run; no engine distribution archive was made.
 
 双线合并后，macOS arm64 Debug/Release 全量测试各 1736 项通过；真实编辑器完成保存重开、
 Play、导出与隐藏源工程后的独立运行。独立游戏与引擎同步推进，不锁定引擎版本；生存玩法尚未实现。
+
+## 2026-10-19 — Two-preset build layout / 双预设构建布局
+
+Keep exactly `debug` and `release` in each of the configure, build and test
+preset lists. Their complete outputs now live under `build/debug` and
+`build/release`; the previous `vendor-*` directories and the unit/integration/GPU
+shortcut presets are removed. Update current commands and documentation. Record
+preset reuse and temporary-file cleanup requirements in AGENTS.md. This changes
+build organization, not engine source code.
+
+The old partial `build/vendor-debug` build was stopped and removed after the
+directory decision. Both new directories configured once and built from source
+on arm64 macOS with LLVM Clang 23.1.3. A sandboxed Debug CTest run passed
+1516/1736 and failed 220 audio/GPU device cases because the host denied audio
+and GPU adapters. With device access, the same unfiltered `ctest --preset debug`
+passed 1736/1736 in 276.67 seconds. `ctest --preset release` passed 1736/1736
+with NDEBUG in 41.33 seconds. Incremental builds in both presets subsequently
+ran five resource/runtime-kit refresh steps and compiled no C/C++ objects.
+`cmake --list-presets=all` lists only the two names in each category.
+
+The actual Debug editor authored and played a bounded private-game salvage area
+through strict product operations. The Release editor exported its native game;
+after relocation and temporary removal of the authoring project, the standalone
+player ran both resource interactions, reported no diagnostics and exited zero.
+Its control replies were read, acknowledged and cleared after a fault-free closed
+status. These are product workflow checks for the current macOS build, not a
+claim that shelter construction, storms, persistence, Windows/Linux or broader
+engine maturity are complete. No engine distribution archive was made.
+
+双预设改为 `build/debug` 与 `build/release`，macOS 双配置全量测试和私有游戏编辑器至独立
+运行流程通过。设备隔离环境中的首次 Debug 音频/GPU 失败已在可访问设备环境下复测通过。

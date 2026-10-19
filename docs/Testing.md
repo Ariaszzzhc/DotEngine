@@ -19,12 +19,7 @@ use doctest. Missing devices fail explicitly.
 
 ```sh
 cmake --preset debug
-cmake --build --preset debug-unit
-ctest --preset debug-unit
-
 cmake --build --preset debug
-ctest --preset debug-integration
-ctest --preset debug-gpu
 ctest --preset debug
 
 cmake --preset release
@@ -32,10 +27,12 @@ cmake --build --preset release
 ctest --preset release
 ```
 
-The unfiltered presets run the current headless automatic suite. Release uses
+The two test presets run the current headless automatic suite. Release uses
 NDEBUG. Complete both builds before full suites, then run Debug and Release
 sequentially to avoid competing with real compiler/process time budgets. Configure
 with `-DBUILD_TESTING=OFF` for a product-only build.
+For a focused local check, pass CTest's label filter to `ctest --preset debug`
+or `ctest --preset release`; this does not require another preset or build tree.
 Reuse the preset build directories for normal development and releases. Reconfigure
 only when configuration inputs require it; a source-only edit normally needs the
 build preset. The presets pin `bin/lib` output paths, so `-B` alone does not isolate

@@ -33,7 +33,7 @@ Use `git submodule update --init --depth 1` after cloning or switching to a
 commit that changes submodule pins. Do not recurse into Dawn's upstream
 submodules: this project pins the selected Dawn dependencies separately under
 `vendor/`. The normal `debug`/`release` presets create
-separate `build/vendor-debug` and `build/vendor-release` directories. Do not
+separate `build/debug` and `build/release` directories. Do not
 copy old CMake caches or module artifacts into them. Windows additionally needs
 the MSVC/Windows SDK environment; Linux needs development headers for its
 selected X11/Wayland and other OS integration APIs. These are platform SDK

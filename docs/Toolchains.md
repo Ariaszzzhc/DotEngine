@@ -30,7 +30,7 @@ vendored native libraries as well as project targets.
 native libraries. `CC`/`CXX` do not select another compiler. Use a fresh build
 directory when changing LLVM installations or runtime libraries; CMake caches
 compiler identities and dependency options. The default Debug/Release presets
-use separate `build/vendor-debug` and `build/vendor-release` directories.
+use separate `build/debug` and `build/release` directories.
 
 Local checks establish only the platforms actually run. On macOS, inspect a real
 link command and `otool -L` to confirm LLD and the LLVM runtime libraries. Windows

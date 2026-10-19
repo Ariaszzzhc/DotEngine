@@ -26,6 +26,16 @@
   Resolve the LLVM installation without hardcoding local paths.
 - Target arm64 macOS and x86_64 Windows/Linux only. Validate locally on macOS;
   do not claim Windows/Linux validation without evidence.
+- Strictly use only the repository's `debug` and `release` CMake configure,
+  build, and test presets. Reuse `build/debug` and `build/release`; configure only
+  for initial setup or when configuration inputs change. Otherwise use incremental
+  preset builds and tests.
+  Do not create ad hoc build trees or override only `-B` on a preset, since its
+  fixed output paths would still apply.
+- After validation, record the necessary results and remove temporary files,
+  investigation scripts, request files, and temporary validation directories once
+  their owning processes have exited. Do not archive temporary build trees; retain
+  the normal preset build directories for reuse during development.
 - Add behavioral tests for normal paths, failures, resource lifetime, and boundary
   conditions. Use CTest; tests must also run with assertions disabled.
 - Unit tests must not initialize windows, rendering devices or audio devices.

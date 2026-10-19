@@ -20,9 +20,6 @@ project toolchain. See [toolchains](docs/Toolchains.md) and
 ```sh
 git submodule update --init --depth 1
 cmake --preset debug
-cmake --build --preset debug-unit
-ctest --preset debug-unit
-
 cmake --build --preset debug
 ctest --preset debug
 ```
@@ -36,15 +33,15 @@ and visual demonstration drivers are not part of the project.
 ## Editor and examples
 
 ```sh
-build/vendor-debug/bin/DotEditor
-build/vendor-debug/bin/DotEditor open examples/FeatureLab
+build/debug/bin/DotEditor
+build/debug/bin/DotEditor open examples/FeatureLab
 ```
 
 The editable [Feature Lab](examples/FeatureLab/README.md) project under `examples/`
 validates engine components and the script SDK. Independently developed games live
 in their own repositories.
 
-Build-generated copies live under `build/vendor-<preset>/examples/`. Project-home creation
+Build-generated copies live under `build/<preset>/examples/`. Project-home creation
 uses the same owned example templates. Open scripts in the external default editor;
 the engine provides `dot:engine`/`dot:host`, and project imports omit extensions.
 
