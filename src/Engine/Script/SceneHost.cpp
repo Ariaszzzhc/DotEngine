@@ -430,6 +430,10 @@ namespace Dot::Script {
         return entity.mesh ? meshJson(*entity.mesh) : Json(nullptr);
       }
 
+      if (name == "material") {
+        return entity.material ? Json{{"asset", entity.material->asset}} : Json(nullptr);
+      }
+
       if (name == "rigidBody") {
         return entity.rigidBody ? bodyJson(*entity.rigidBody) : Json(nullptr);
       }
@@ -464,6 +468,16 @@ namespace Dot::Script {
       if (name == "mesh") {
         return written(scene.setMeshRenderer(
             id, value.is_null() ? std::nullopt : std::optional{meshValue(value)}));
+      }
+
+      if (name == "material") {
+        if (value.is_null()) {
+          return written(scene.setMaterial(id, std::nullopt));
+        }
+
+        Codec::requireFields(value, {"asset"});
+        return written(
+            scene.setMaterial(id, World::MaterialBinding{value.at("asset").get<std::string>()}));
       }
 
       if (name == "rigidBody") {
@@ -501,6 +515,7 @@ namespace Dot::Script {
               {"transform", transformJson(entity.transform)},
               {"camera", componentJson(entity, "camera").value()},
               {"mesh", componentJson(entity, "mesh").value()},
+              {"material", componentJson(entity, "material").value()},
               {"rigidBody", componentJson(entity, "rigidBody").value()},
               {"character", componentJson(entity, "character").value()},
               {"audioSource", componentJson(entity, "audioSource").value()},

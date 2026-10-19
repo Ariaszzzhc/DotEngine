@@ -428,6 +428,12 @@ export interface MeshRenderer {
   visible: boolean;
 }
 
+/** A native PBR material resource, validated by the scene and loaded by rendering.
+ * 原生 PBR 材质资源，由场景校验并由渲染服务加载。 */
+export interface MaterialBinding {
+  asset: string;
+}
+
 export interface RigidBody {
   motion: 'static'|'kinematic'|'dynamic';
   collisionDetection: 'discrete'|'continuous';
@@ -520,6 +526,10 @@ export const components = Object.freeze({
 
   mesh(overrides: Partial<MeshRenderer> = {}): MeshRenderer {
     return {kind: 'cube', asset: '', tint: {x: 1, y: 1, z: 1, w: 1}, visible: true, ...overrides};
+  },
+
+  material(asset: string): MaterialBinding {
+    return {asset};
   },
 
   rigidBody(overrides: Partial<RigidBody> = {}): RigidBody {
@@ -1128,6 +1138,7 @@ export interface EntityInfo {
   transform: Transform;
   camera: Camera|null;
   mesh: MeshRenderer|null;
+  material: MaterialBinding|null;
   rigidBody: RigidBody|null;
   character: CharacterController|null;
   audioSource: AudioSource|null;
@@ -1209,6 +1220,14 @@ export class Entity {
 
   set mesh(value: MeshRenderer|null) {
     invoke('component.set', [this.id, 'mesh', value]);
+  }
+
+  get material(): MaterialBinding|null {
+    return invoke('component.get', [this.id, 'material']) as MaterialBinding|null;
+  }
+
+  set material(value: MaterialBinding|null) {
+    invoke('component.set', [this.id, 'material', value]);
   }
 
   get rigidBody(): RigidBody|null {

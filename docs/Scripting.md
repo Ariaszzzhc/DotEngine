@@ -246,7 +246,7 @@ so whole-subtree copies retain independent remapped rigs. The strict host method
 | `entity.list` | `[]` | IDs in creation order |
 | `entity.findNamed` | `[name]` | all exact name matches in creation order; missing returns `[]` |
 | `entity.create` | `[name]` | ID |
-| `entity.get` | `[id]` | owned identity, name, parent, transform and six component snapshots |
+| `entity.get` | `[id]` | owned identity, name, parent, transform and component snapshots |
 | `entity.destroy` | `[id]` | undefined; deletes the entire subtree |
 | `entity.rename` | `[id, name]` | undefined |
 | `transform.get` | `[id]` | owned local TRS snapshot |
@@ -265,7 +265,7 @@ scene normalizes quaternions and validates nonzero scales, hierarchy/world overf
 and cycles before each mutation. Name, thread, scope and subtree rules are the same
 as direct native calls. Getters return owned snapshots; editing one has no native
 effect until assignment. The snapshot includes nullable `camera`, `mesh`,
-`rigidBody`, `audioSource`, `audioListener`, and `script` descriptions. Those exact
+`material`, `rigidBody`, `character`, `audioSource`, `audioListener`, and `script` descriptions. Those exact
 names are accepted by component.get/set. Null removal is idempotent for a live
 entity; a destroyed owner remains an explicit error. A missing primary component
 is null. `Entity.exists` is false for missing IDs in this scene, while foreign,
@@ -289,8 +289,9 @@ backend-specific constraints are checked by the consuming services.
 `components` creates fresh descriptions matching native defaults. Camera, mesh,
 and rigidBody accept shallow `Partial` overrides that replace complete fields;
 these are convenience constructors, and assignment still validates all fields.
-Audio sources require an asset path, and script descriptions require a source
-path. Default nested objects are independent; caller-supplied override objects
+Material bindings require a portable `.dotmaterial` asset path; the consuming
+renderer loads the resource. Audio sources require an asset path, and script descriptions
+require a source path. Default nested objects are independent; caller-supplied override objects
 remain ordinary caller-owned values until an assignment copies them.
 
 ```ts
@@ -298,6 +299,7 @@ import {scene, components} from 'dot:engine';
 
 const actor = scene.create('Actor');
 actor.mesh = components.mesh({tint: {x: 0, y: 1, z: 0, w: 1}});
+actor.material = components.material('assets/surface.dotmaterial');
 actor.rigidBody = components.rigidBody({motion: 'kinematic', shape: 'box'});
 actor.audioSource = components.audioSource('audio/theme.wav');
 actor.script = components.script('actors/mover.ts', 'Mover');

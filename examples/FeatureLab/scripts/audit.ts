@@ -664,8 +664,23 @@ export class Audit extends ScriptComponent<{contract: string}> {
     parent.destroy();
   }
 
+  private materialChecks(): void {
+    const view = scene.create('Material binding audit');
+    const material = components.material('assets/materials/copper.dotmaterial');
+    this.check('components.material', material.asset.endsWith('.dotmaterial'));
+    view.material = material;
+    this.check('Entity.material.set', equal(view.material, material));
+    this.check('Entity.material.get', view.info().material?.asset === material.asset);
+    view.material = null;
+    view.destroy();
+  }
+
   onFixedUpdate(seconds: number): void {
     ++this.#fixed;
+
+    if (!this.#checked.has('Entity.material.set')) {
+      this.materialChecks();
+    }
 
     if (!this.#checked.has('scene.group')) {
       this.hierarchyChecks();

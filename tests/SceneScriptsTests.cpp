@@ -507,6 +507,7 @@ export class Actor extends ScriptComponent {
   onStart(): void {
     this.self.camera = components.camera({primary: true});
     this.self.mesh = components.mesh({tint: {x: 0, y: 1, z: 0, w: 1}});
+    this.self.material = components.material('assets/surface.dotmaterial');
     this.self.rigidBody = components.rigidBody({motion: 'static', shape: 'box'});
     this.self.audioSource = components.audioSource('missing.wav');
     this.self.audioListener = components.audioListener(true);
@@ -525,6 +526,7 @@ export class Actor extends ScriptComponent {
 
   onStop(): void {
     this.self.mesh = null;
+    this.self.material = null;
     this.self.name += ' stopped';
   }
 }
@@ -535,9 +537,10 @@ export class Actor extends ScriptComponent {
   auto scripts = service(native, program);
   good(scripts.start());
   auto state = native->entity(id).value();
-  REQUIRE(
-      (state.camera && state.mesh && state.rigidBody && state.audioSource && state.audioListener));
+  REQUIRE((state.camera && state.mesh && state.material && state.rigidBody && state.audioSource
+           && state.audioListener));
   CHECK(state.mesh->tint.y == 1);
+  CHECK(state.material->asset == "assets/surface.dotmaterial");
   CHECK(native->primaryCamera().value() == id);
   CHECK(native->primaryAudioListener().value() == id);
   good(scripts.update(0.1));
@@ -550,6 +553,7 @@ export class Actor extends ScriptComponent {
   CHECK(scripts.stats()->disabled == 1);
   CHECK(native->entity(id)->name == "disabled stopped");
   CHECK_FALSE(native->entity(id)->mesh);
+  CHECK_FALSE(native->entity(id)->material);
   good(scripts.stop());
 }
 
@@ -562,13 +566,15 @@ import {Entity, scene, ScriptComponent} from 'dot:engine';
 import type {HostError, ScriptContext} from 'dot:engine';
 
 function inspect(e: Entity): void {
-  if (!e.exists || !e.info().script || e.camera !== null || e.mesh !== null || e.rigidBody !== null
+  if (!e.exists || !e.info().script || e.camera !== null || e.mesh !== null
+      || e.material !== null || e.rigidBody !== null
       || e.audioSource !== null || e.audioListener !== null || scene.primaryCamera !== null
       || scene.primaryListener !== null) {
     throw Error('read guard denied or wrong data');
   }
 
-  for (const name of ['camera', 'mesh', 'rigidBody', 'audioSource', 'audioListener', 'script']) {
+  for (const name of ['camera', 'mesh', 'material', 'rigidBody', 'audioSource',
+      'audioListener', 'script']) {
     let rejected = false;
 
     try {

@@ -261,7 +261,7 @@ TEST_CASE("scene_host_direct_callbacks_reject_malformed_transport_without_change
 }
 
 namespace {
-  constexpr std::array componentNames{"camera",      "mesh",          "rigidBody",
+  constexpr std::array componentNames{"camera",      "mesh",          "material", "rigidBody",
                                       "audioSource", "audioListener", "script"};
 
   auto component(const HostBindings& services, Dot::World::EntityId entity, std::string_view name)
@@ -276,6 +276,7 @@ namespace {
       -> void {
     REQUIRE(scene->setCamera(entity, Dot::World::Camera{}));
     REQUIRE(scene->setMeshRenderer(entity, Dot::World::MeshRenderer{}));
+    REQUIRE(scene->setMaterial(entity, Dot::World::MaterialBinding{"assets/surface.dotmaterial"}));
     REQUIRE(scene->setRigidBody(entity, Dot::World::RigidBody{}));
     Dot::World::AudioSource audio;
     audio.asset = "audio/音源.wav";
@@ -338,6 +339,16 @@ TEST_CASE("component_host_strict_shapes_and_transport_fail_before_native_mutatio
       CHECK(result.error().code == Dot::Core::ErrorCode::InvalidArgument);
       CHECK(component(services, entity, name) == original);
     }
+  }
+
+  const auto material = component(services, entity, "material");
+
+  for (const auto* asset :
+       {"", "../surface.dotmaterial", "assets/surface.png", "/absolute/surface.dotmaterial"}) {
+    auto rejected = invoke(services, "component.set",
+                           Json::array({id(entity), "material", Json{{"asset", asset}}}));
+    CHECK_FALSE(rejected);
+    CHECK(component(services, entity, "material") == material);
   }
 
   CHECK_FALSE(invoke(services, "component.get", Json::array({id(entity), "unknown"})));

@@ -16536,3 +16536,28 @@ engine maturity are complete. No engine distribution archive was made.
 
 双预设改为 `build/debug` 与 `build/release`，macOS 双配置全量测试和私有游戏编辑器至独立
 运行流程通过。设备隔离环境中的首次 Debug 音频/GPU 失败已在可访问设备环境下复测通过。
+
+## 2026-10-19 — Script material binding / 脚本材质绑定
+
+Expose the existing native PBR `MaterialBinding` through the strict script scene
+host and TypeScript SDK. Scripts can inspect, attach and remove the same scene
+component used by the editor, without creating a game-specific renderer path.
+FeatureLab audits the new SDK operations; host and script regressions cover owned
+snapshots, malformed paths, lifecycle removal and constructor restrictions.
+
+On arm64 macOS, incremental Debug and Release preset builds succeeded. Full
+CTest passed 1736/1736 in Debug (280.70 seconds) and 1736/1736 in
+Release/NDEBUG (36.65 seconds). After formatting, incremental builds and the
+11 focused script/component/FeatureLab checks passed in both presets. The actual
+Debug editor opened the private game,
+checked three TypeScript sources, entered Play with two seeds, inspected 20
+seeded terrain mesh bodies per world, and observed no diagnostics. Native input
+crossed terrain strip seams and moved up the slope. The Release editor saved and
+reopened the scene, checked scripts and exported a native player. A relocated
+player ran twice while the source game folder was hidden; the same seed's saved
+world and position returned after restart. Both player processes exited zero,
+and all closed control sessions had no fault, uncertain or unprocessed IDs.
+The game remains a bounded blockout prototype. Windows and Linux were not run.
+
+通过原有场景材质组件提供脚本读写，并由真实游戏的种子地形制作和独立运行验证；
+macOS arm64 双配置全量测试各 1736 项通过，未验证其他平台。
