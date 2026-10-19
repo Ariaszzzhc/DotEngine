@@ -12,7 +12,7 @@ repeating across fixed steps.
 ```text
 cmake --preset debug
 cmake --build --preset debug
-build/debug/bin/DotEditor open build/debug/examples/PrismRelay
+build/vendor-debug/bin/DotEditor open build/vendor-debug/examples/PrismRelay
 ```
 
 Enable Game input in Play. WASD/arrows move, Shift sprints, Space jumps, mouse
@@ -27,7 +27,7 @@ native scene transforms, GPU skinning, animation players and rendering remain
 engine systems. Source hot reload retains intent, jump buffering and camera state
 without recreating the scene or replaying Start. Invalid checkpoints fail migration.
 
-Generated copies under `build/<preset>/examples/` are replaced on builds. Use the
+Generated copies under `build/vendor-<preset>/examples/` are replaced on builds. Use the
 project home to create a writable template copy, or copy the generated folder before
 persistent editing. Source projects open directly and resolve the engine-owned
 `dot:engine` module without copied SDK sources. The portable editor includes the

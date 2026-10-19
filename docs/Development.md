@@ -16314,3 +16314,8 @@ Windows and Linux builds, and merged-line combination tests remain separate.
 已删除跟踪的 vcpkg 接入；删除后全新目录构建、双配置完整测试、真实 PrismRelay
 编辑器 Play/保存重开与独立导出运行均有 macOS arm64 证据。Windows/Linux 与两线合并
 后的组合验证仍须另行执行。
+
+Final documentation review corrects the current example and distribution paths
+to the vendor preset directories. No source, build option or binary changes are
+made in that documentation-only follow-up; the verified results above remain the
+validation evidence for the build change.

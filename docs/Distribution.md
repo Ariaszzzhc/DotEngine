@@ -46,7 +46,7 @@ cmake --build --preset release --target DotEditorDistribution
 cmake --build --preset release --target DotEditorArchive
 ```
 
-Output is `build/release/distribution/DotEngine` and the platform-named zip beside
+Output is `build/vendor-release/distribution/DotEngine` and the platform-named zip beside
 it. Debug offers the same targets for diagnosis. These outputs are
 owned/generated and refreshed by those targets; keep authored projects elsewhere.
 Do not edit the delivered templates in place: project-home creation copies them
