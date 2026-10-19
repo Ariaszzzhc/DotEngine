@@ -13,3 +13,7 @@
 	path = vendor/dawn
 	url = https://github.com/google/dawn.git
 	shallow = true
+[submodule "vendor/spirv-tools"]
+	path = vendor/spirv-tools
+	url = https://github.com/KhronosGroup/SPIRV-Tools.git
+	shallow = true

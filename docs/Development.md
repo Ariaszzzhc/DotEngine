@@ -16240,3 +16240,15 @@ and runtime kit are verified. No package or distribution is produced here.
 
 首先将三个大型依赖的源码固定为上游发布提交；本阶段仍由原有 vcpkg 构建，尚未验证
 新的 vendor 构建。后续阶段需要完成其余依赖、构建和资源路径迁移，再删除 vcpkg。
+
+The source import now also pins SPIRV-Tools at
+`e265f557e3db20843c6d135d2b9eeb51ecc79d73` as a shallow submodule and
+copies only the selected ImGui, stb, cgltf, tinyobjloader, xxHash, nlohmann-json
+and miniaudio files with licenses. The miniaudio copy includes DotEngine's
+existing initialization cleanup; the matching patch remains beside that copy.
+The nlohmann-json copy comes from its upstream release, without vcpkg port
+patches. `vendor/SOURCES.md` records revisions and selected inputs. These are
+source-only inputs: compilation, link, generated resources and native product
+behavior have not yet been tested against them.
+
+精简源码与 SPIRV-Tools 已固定来源；当前尚未接入构建，也未据此声称功能验证通过。
