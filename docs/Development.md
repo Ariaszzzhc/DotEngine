@@ -16561,3 +16561,37 @@ The game remains a bounded blockout prototype. Windows and Linux were not run.
 
 通过原有场景材质组件提供脚本读写，并由真实游戏的种子地形制作和独立运行验证；
 macOS arm64 双配置全量测试各 1736 项通过，未验证其他平台。
+
+## 2026-10-20 — Audio motion timebase / 音频运动时间基准
+
+GameSession now accumulates successful native fixed-step time since the previous
+audio synchronization. If several fixed steps move a listener/source before a
+short render update, scene audio uses the larger elapsed time for Doppler
+velocity. The existing 100 m/s native limit still rejects genuinely excessive
+motion. One headless GameSession regression moves the listener in two fixed
+steps before a 10-microsecond update and checks that the session remains live
+and reports its real motion. The change stays in the session implementation;
+audio backends and public script APIs are unchanged.
+
+On arm64 macOS, incremental `debug` and `release` preset builds succeeded. An
+initial sandboxed full Release run failed 220 audio-device/offscreen-GPU cases;
+the log reported no supported GPU adapter. With actual device access, unfiltered
+CTest passed 1737/1737 in Release/NDEBUG (34.52 seconds) and Debug (266.28
+seconds). After a comment-format adjustment, both preset builds and three
+focused audio/session checks passed again. No new configure or build tree was
+used.
+
+The real Debug editor opened a build-owned copy of the private game, checked
+scripts, saved and reopened its scene, then entered Play. A seeded world made
+20 terrain strips; native input moved across the slope, turned left and right,
+and returned without Play diagnostics. The Release editor exported the same
+copy as a native game. A relocated player ran while that temporary source
+project was hidden, performed the same movement and turns, retained a running
+state with zero script failures and no diagnostics, and exited zero. Both editor
+and player control sessions closed without faults, uncertain or unprocessed IDs.
+The earlier audio fault in an older game package was not reproduced against
+this patched executable; its sole cause is not proven. Windows/Linux were not
+executed, and this check does not establish the game's full playable gate.
+
+游戏会话按成功推进的固定步累计音频运动时间；macOS arm64 双配置全量测试及真实
+编辑器到独立游戏流程通过。旧包音频故障的唯一根因尚未证实。

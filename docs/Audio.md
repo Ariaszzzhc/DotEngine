@@ -328,6 +328,10 @@ New sources/listeners have zero initial velocity, including listener switches.
 Derived speed over 100 m/s is rejected, and failed synchronization does not update
 previous positions. Tiny positive timesteps use double division before float
 conversion; stationary poses remain valid. Doppler still requires its opt-in factor.
+GameSession accumulates successful fixed-step time between audio synchronizations.
+When a render update follows multiple fixed steps but reports a shorter delta,
+the derived speed uses the larger elapsed time. A genuine over-speed pose still
+fails the same 100 m/s validation.
 
 All desired files, budgets, poses, and binding containers are prepared before one
 voice batch commits. Missing/corrupt files include entity/path context and leave

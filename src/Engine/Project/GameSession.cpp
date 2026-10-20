@@ -1,5 +1,6 @@
 module;
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -117,6 +118,7 @@ namespace Dot::Project {
     std::uint64_t m_fixedSteps{};
     std::uint64_t m_updates{};
     std::uint64_t m_lifetimeFixedSteps{};
+    double m_audioFixedSeconds{};
     std::shared_ptr<const Origin> m_origin;
     std::optional<Script::InputSource> m_input;
     std::optional<Script::PhysicsSource> m_physics;
@@ -392,6 +394,7 @@ namespace Dot::Project {
 
           ++m_fixedSteps;
           ++m_lifetimeFixedSteps;
+          m_audioFixedSeconds = std::min(1.0, m_audioFixedSeconds + simulationSeconds);
         }
 
         if (!paused || stepping) {
@@ -429,6 +432,8 @@ namespace Dot::Project {
             retireServices();
             return std::unexpected(advanced.error());
           }
+
+          m_audioFixedSeconds = std::min(1.0, m_audioFixedSeconds + seconds);
         }
 
         if (!fixed) {
@@ -440,13 +445,17 @@ namespace Dot::Project {
             return std::unexpected(animated.error());
           }
 
-          auto synchronized = m_audio->synchronize(seconds);
+          /** Physics may advance several fixed steps before a short render frame.
+           * 物理可能在短渲染帧前推进多个固定步，音频速度须按累计模拟时长计算。 */
+          auto synchronized = m_audio->synchronize(std::max(seconds, m_audioFixedSeconds));
 
           if (!synchronized) {
             m_state = SessionState::Faulted;
             retireServices();
             return std::unexpected(synchronized.error());
           }
+
+          m_audioFixedSeconds = 0;
         }
 
         if (!paused || stepping) {
@@ -2099,6 +2108,8 @@ namespace Dot::Project {
           m_impl->retireServices();
           return std::unexpected(synchronized.error());
         }
+
+        m_impl->m_audioFixedSeconds = 0;
 
         auto activated = m_impl->m_audio->beginPlayback();
 

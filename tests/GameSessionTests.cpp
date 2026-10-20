@@ -363,6 +363,37 @@ export class Mover extends ScriptComponent {
   good(session.close());
 }
 
+TEST_CASE("game_session_audio_velocity_uses_elapsed_fixed_steps_before_short_frame") {
+  Fixture fixture(false);
+  auto scene = fixture.project.loadStartup().value();
+  const auto camera = scene.entities()->front().id;
+  REQUIRE(scene.setAudioListener(camera, Dot::World::AudioListener{true}));
+  REQUIRE(fixture.project.saveStartup(scene));
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts", R"ts(
+import {audio, scene, ScriptComponent} from 'dot:engine';
+export class Mover extends ScriptComponent {
+  onFixedUpdate(): void {
+    const camera = scene.primaryCamera!;
+    const pose = camera.transform;
+    pose.position.x += 0.05;
+    camera.transform = pose;
+  }
+  onUpdate(): void {
+    this.self.name = audio.listener().velocity.x > 2 ? 'moving' : 'stationary';
+  }
+}
+)ts"));
+  auto session = fixture.session();
+  good(session.start());
+  good(session.fixedUpdate());
+  good(session.fixedUpdate());
+  good(session.update(0.00001));
+  CHECK(session.stats()->state == SessionState::Running);
+  good(session.update(0));
+  CHECK(actor(session).name == "moving");
+  good(session.close());
+}
+
 TEST_CASE("game_session_hot_reload_migrates_scripts_and_retains_native_motion_audio") {
   Fixture fixture;
   fixture.controller();
