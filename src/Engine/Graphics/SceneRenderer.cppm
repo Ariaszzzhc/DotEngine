@@ -115,7 +115,7 @@ export namespace Dot::Graphics {
   public:
     [[nodiscard]] static auto create(Renderer& renderer,
                                      std::optional<Core::FileSystem> assets = std::nullopt,
-                                     std::uint64_t maxCacheBytes = 256 * 1024 * 1024)
+                                     std::uint64_t maxCacheBytes = 512 * 1024 * 1024)
         -> Core::Result<SceneRenderer>;
     SceneRenderer(const SceneRenderer&) = delete;
     auto operator=(const SceneRenderer&) -> SceneRenderer& = delete;

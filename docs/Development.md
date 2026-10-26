@@ -16702,3 +16702,46 @@ process exited zero; their control sessions closed without faults, uncertain
 or unprocessed requests and were acknowledged and cleared. The temporary
 timing patch was removed. No Debug tests, Windows/Linux run or human pointer
 check was part of this diagnosis.
+
+## 2026-10-26 — Populated character cache and viewport ownership / 角色场景缓存与视口归属
+
+Project Wasteland imported two distinct, textured, skinned characters with
+three native clips each. Keeping both authoring instances visible exceeded the
+old 256 MiB scene cache. Hiding both and showing only the selected gender
+still produced `Scene mesh cache byte budget exceeded` during the real editor
+Play render. The shared `SceneRenderer` default is now 512 MiB, within its
+existing explicit 1 GiB maximum and the renderer's separate resource limits.
+Exact caller-supplied budgets and their explicit failures are unchanged. This
+supports the current populated region; it does not implement streaming or an
+unbounded memory policy.
+
+That larger scene also exposed a stale deferred GUI viewport: Play's retained
+frame metadata could claim readiness after a new target was allocated, while
+the target had no completed frame at its current physical size. The real editor
+exited 1 with `Deferred GUI viewport must complete its current pixel dimensions`.
+Workspace now invalidates retained view/frame state when replacing the target
+and checks the actual target's completed-frame count and dimensions before
+returning it to the shared GUI renderer. An incomplete target remains absent
+until a real current-size frame completes. After the fix, the same Release
+editor entered Play for both genders, displayed exactly one character's
+skinned meshes, captured actual game pixels, and reported empty script
+diagnostics. Normal input changed native Idle/Walk/Run clips 0/1/2 and returned
+to Idle when movement stopped.
+
+Incremental `release` and `debug` preset builds succeeded on arm64 macOS;
+no configure or separate build tree was used. Release offscreen scene/material/
+skin tests passed 38/38 and GUI tests 15/15. The combined Debug selection
+passed 53/53. The real Release editor checked three game scripts, exported a
+native package, and its relocated player ran male and female seeded worlds
+while the authoring `Game/` directory was hidden. A new process reloaded the
+male world with the moved position `z=7.068334579467773`, model and idle clip
+intact. Successful editor/player processes exited zero with closed, fault-free,
+ACKed and cleared control sessions. An earlier temporary import client omitted
+the required close field and exited, leaving one orphan ready mailbox; after
+proving its process absent and all 19 replies consumed, its exact owned
+directories were removed manually because the product has no abandoned-session
+recovery operation. That client error did not alter the published model files.
+
+Full CTest, the complete five-activity route after the visual update,
+Windows/Linux execution and human OS pointer acceptance were not repeated.
+The separate intermittent Metal drawable wait remains unresolved.

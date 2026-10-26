@@ -9321,6 +9321,9 @@ namespace Dot::Editor {
         }
 
         m_target.emplace(std::move(*created));
+        m_previewReady = false;
+        m_renderedFrame.reset();
+        m_renderedView.reset();
       }
 
       auto scene = displayedScene();
@@ -9500,7 +9503,16 @@ namespace Dot::Editor {
         }
       }
 
-      m_previewReady = drawn.has_value() && m_renderedFrame
+      auto targetInfo = m_target->info();
+
+      if (!targetInfo) {
+        return std::unexpected(targetInfo.error());
+      }
+
+      /** A retained frame record cannot make a newly allocated target presentable.
+       * 保留的帧记录不能让刚分配、尚未完成绘制的目标成为可显示图像。 */
+      m_previewReady = drawn.has_value() && targetInfo->frames > 0 && targetInfo->width == width
+                       && targetInfo->height == height && m_renderedFrame
                        && m_renderedFrame->context.scene == (*scene)->id()
                        && (!publishedPlay()
                            || (m_renderedFrame->context.gameUiVisible == m_gameUiVisible

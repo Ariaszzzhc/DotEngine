@@ -196,12 +196,15 @@ come from the selected camera's current world matrix. Disabled lights are skippe
 more than 64 enabled lights fails without submitting a new target frame.
 
 `SceneRenderer` shares meshes, materials and textures by path and full sampling
-options. Its byte budget includes logical mesh/texture GPU bytes; material and
-texture counts are bounded by 4096. New textures enter the cache only after all
-slots load successfully. Nonreferenced visible-scene resources are pruned;
-immutable assets reload via `clearCache`. Saved editor resources request that same
-refresh. Cache counters include materials/textures/texture bytes; failure retains
-completed target pixels, and clear/destruction releases owned resources. Material
+options. Its default scene cache budget is 512 MiB, with an explicit caller budget
+accepted from 1 byte through 1 GiB. The budget includes logical mesh/texture GPU
+bytes and skinned output/control residency; it is not a total process or device
+memory cap. Material and texture counts are bounded by 4096. New textures enter
+the cache only after all slots load successfully. Nonreferenced visible-scene
+resources are pruned; immutable assets reload via `clearCache`. Saved editor
+resources request the same refresh. Cache counters include materials, textures
+and texture bytes. Failure retains completed target pixels; clear and destruction
+release owned resources. Material
 loads and camera/light preparation report contextual errors without fake surfaces.
 Built-in cube/quad geometry now carries unit normals and full-face UVs; cubes use
 24 split face-corner vertices. Authored assets keep their actual attributes: missing
