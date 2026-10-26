@@ -16675,3 +16675,30 @@ not establish that every audio failure is gone. The native profile still
 captured a 1,031.973 ms Render phase and 900 ms of dropped fixed time; that
 intermittent wait remains unresolved. Windows/Linux and human pointer play
 were not executed; no engine distribution package was made.
+
+## 2026-10-26 — Metal drawable wait attribution / Metal 画面获取等待定位
+
+On arm64 macOS with the current Release preset, temporary timing around the
+ordinary renderer present path located the intermittent one-second Render peak
+inside WebGPU surface acquisition. A real Release editor export of the current
+private game ran through the exported native player and its strict input
+interface on seed `hitchprobe26`. The first 3,000-input-frame run sampled 3,622
+application steps and reached only 23.086 ms Render. A 12,000-input-frame run
+sampled 12,724 steps; its 1,032.173 ms Render peak contained a 1,030.768 ms
+`GetCurrentTexture` call returning `SuccessOptimal`, followed by 900.000 ms of
+dropped fixed time. Submission and presentation did not cross the temporary
+200 ms diagnostic threshold. A second 12,000-frame run had no long Render peak.
+
+A fresh editor export with temporary SDL window-state logging then ran another
+12,000 input frames. Its 1,016.157 ms Render peak contained a 1,014.556 ms
+successful surface acquisition and was followed by 883.333 ms of dropped fixed
+time. The window flags were `0x20002020` (Metal, high pixel density, resizable),
+without minimized or occluded flags, and keyboard focus was false at the end
+of the wait. The pinned Dawn Metal swap chain calls `CAMetalLayer.nextDrawable`
+there. This localizes the measured wait to drawable acquisition, but does not
+prove why macOS withheld the drawable or that all such waits require lost focus.
+No presentation policy was changed on that inference. Every player and editor
+process exited zero; their control sessions closed without faults, uncertain
+or unprocessed requests and were acknowledged and cleared. The temporary
+timing patch was removed. No Debug tests, Windows/Linux run or human pointer
+check was part of this diagnosis.
