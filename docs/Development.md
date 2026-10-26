@@ -16813,3 +16813,48 @@ the skinned model and its idle/walk/attack clips, and exported a native game.
 A relocated standalone game launched and reloaded a seed with the source
 project hidden. These product checks validate this importer case; full CTest,
 Windows/Linux, every glTF exporter and human pointer interaction were not run.
+
+## 2026-10-26 — Paced native control presentation / 原生控制呈现节奏
+
+The current private game repeatedly logged native frames above one second and
+dropped fixed-step time during unfocused agent-controlled playback. Prior
+temporary timing had located such a stall inside Metal's successful surface
+texture acquisition. The native player used FIFO presentation while its
+application loop slept only 1 ms after each step. In the opt-in `--control`
+mode, it now sleeps 16 ms after each step to limit the rate at which an
+unfocused loop asks the compositor for new drawables. Ordinary player timing
+and focus-pausing behavior are unchanged. Input frames still are not an exact
+time unit; status reports actual completed fixed steps.
+
+The real Release editor exported unchanged Project Wasteland content before
+and after this one-line runtime setting. Both exported `game/` trees were
+byte-identical. On arm64 macOS, the baseline native run used seed
+`hitchbench26` and 6,000 ordinary product control input frames. Its retained
+application profile sampled 12,066 steps and captured a 1,015.351 ms Render
+peak, followed by a 1,017.306 ms input interval with 883.333 ms of dropped
+fixed time. The paced candidate ran the same seed and 6,000 input frames:
+7,250 sampled steps, 17.377 ms Render peak, 67.993 ms longest input interval
+and zero dropped fixed time. A second candidate run of 3,000 input frames
+sampled 3,626 steps, with 18.915 ms Render peak, 64.014 ms longest interval
+and zero dropped fixed time. Both candidate runs had empty script diagnostics;
+30 normal D input frames moved the player from `(0, 7.5)` to about `(2.40,
+7.5)` in the second run. The fixed-step counts differed substantially
+because the baseline spun far faster than display cadence; these profiles
+compare actual product input counts and content, not equal simulation time.
+
+An additional paced export was relocated and run twice while the source
+`Game/` folder was hidden. Normal input created female `pacedverify26`, moved
+the player to `x=1.9724235534667969`, and closed; a fresh process restored
+the same seed, gender, position and exactly one authored guardian model with
+empty diagnostics. This first relocated startup still logged 116.667 ms of
+dropped fixed time, so the intermittent wait is reduced in the observed runs,
+not proven eliminated. All checked editor/player processes exited zero;
+their closed control sessions had no faults, uncertain or unprocessed IDs
+and were acknowledged and cleared.
+
+Incremental `release` and `debug` preset builds of DotGame and DotEditor
+passed without configure or a new build tree. Focused application,
+native-control and exported-game CTest selections passed 25/25 in both
+Release/NDEBUG and Debug. Full CTest, Windows/Linux, ordinary focused human
+play, other display refresh rates and longer-duration hitch statistics were
+not executed for this stage.

@@ -151,6 +151,13 @@ namespace Dot::Runtime {
       applicationConfig.window.gpuSurface = true;
       applicationConfig.fixedStep = std::chrono::nanoseconds{1'000'000'000 / description->fixedHz};
       applicationConfig.pauseOnFocusLoss = options.pauseOnFocusLoss && !options.control;
+      /** Agent input counts application frames even when the window is unfocused.
+       * Pace FIFO presentation in this mode so a fast loop cannot flood the
+       * drawable queue while the compositor presents at display cadence.
+       * 机器输入按应用帧计数；失焦控制模式按显示节奏限制 FIFO
+       * 呈现，避免快速循环填满可绘制缓冲队列。 */
+      applicationConfig.frameDelay
+          = options.control ? std::chrono::milliseconds{16} : std::chrono::milliseconds{1};
       auto application = Core::Application::create(applicationConfig);
 
       if (!application) {

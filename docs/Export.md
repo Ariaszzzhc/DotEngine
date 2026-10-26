@@ -185,6 +185,12 @@ acknowledges nonexistent pointer capture or manually advances simulation. Pointe
 acknowledgement continues to follow actual window focus/relative mode. Native
 Escape/window close and the product close request use the same application stop
 and session shutdown. Without `--control`, normal focus-pausing behavior remains.
+The controlled player waits at least 16 ms after each application step before
+starting the next one, limiting unfocused FIFO presentation pressure. Ordinary
+playback retains its existing frame delay. A requested number of input frames
+does not promise an exact simulation duration: rendering, operating-system
+waits and fixed-step catch-up still vary. Read actual completed input and
+simulation counters from player status.
 
 After creating its real session, the process prints and flushes one JSON line with
 `ok`, `kind: "player"` and canonical `control`/`receipts` paths. Mailbox readiness is not
