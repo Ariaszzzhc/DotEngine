@@ -276,6 +276,16 @@ TEST_CASE(
   REQUIRE(audio->synchronize(scene, 0.1));
   CHECK(audio->voice(entity)->spatial.velocity.x == doctest::Approx(10));
   CHECK(audio->listener()->velocity.x == doctest::Approx(10));
+  REQUIRE(scene.setTransform(listener, {{100, 0, 0}}));
+  auto invalidListener = audio->synchronize(scene, 0.1);
+  REQUIRE_FALSE(invalidListener);
+  CHECK(invalidListener.error().message.find("Scene audio entity 2") != std::string::npos);
+  CHECK(invalidListener.error().message.find("elapsed 0.1 s") != std::string::npos);
+  CHECK(invalidListener.error().message.find("velocity [990") != std::string::npos);
+  CHECK(audio->listener()->position.x == 1);
+  REQUIRE(scene.setTransform(listener, {{2, 0, 0}}));
+  REQUIRE(audio->synchronize(scene, 0.1));
+  CHECK(audio->listener()->velocity.x == doctest::Approx(10));
   REQUIRE(scene.setTransform(entity, {{100, 0, 0}}));
   CHECK_FALSE(audio->synchronize(scene, 0.1));
   CHECK(audio->voice(entity)->spatial.position.x == -9);

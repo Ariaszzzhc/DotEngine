@@ -293,7 +293,15 @@ namespace Dot::Audio {
           auto normalized = context(validatedListener(listener), *primary);
 
           if (!normalized) {
-            return std::unexpected(normalized.error());
+            auto error = std::move(normalized.error());
+            error.message = std::format(
+                "{} (elapsed {} s, current [{}, {}, {}], previous [{}, {}, {}], velocity [{}, {}, "
+                "{}])",
+                error.message, seconds, listener.position.x, listener.position.y,
+                listener.position.z, m_listener.position.x, m_listener.position.y,
+                m_listener.position.z, listener.velocity.x, listener.velocity.y,
+                listener.velocity.z);
+            return std::unexpected(std::move(error));
           }
 
           listener = *normalized;

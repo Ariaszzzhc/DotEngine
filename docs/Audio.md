@@ -332,6 +332,9 @@ GameSession accumulates successful fixed-step time between audio synchronization
 When a render update follows multiple fixed steps but reports a shorter delta,
 the derived speed uses the larger elapsed time. A genuine over-speed pose still
 fails the same 100 m/s validation.
+An invalid listener sample reports its elapsed time, current/previous world
+positions and derived velocity with the owning entity so intermittent product
+faults can be distinguished from invalid source content.
 
 All desired files, budgets, poses, and binding containers are prepared before one
 voice batch commits. Missing/corrupt files include entity/path context and leave

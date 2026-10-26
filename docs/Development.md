@@ -16595,3 +16595,38 @@ executed, and this check does not establish the game's full playable gate.
 
 游戏会话按成功推进的固定步累计音频运动时间；macOS arm64 双配置全量测试及真实
 编辑器到独立游戏流程通过。旧包音频故障的唯一根因尚未证实。
+
+## 2026-10-26 — Audio fault context / 音频故障上下文
+
+A relocated Project Wasteland native export on arm64 macOS Release exited 1
+while turning after resource collection. The terminal reported three frame
+intervals above one second, dropped fixed time and `Scene audio entity 1 asset
+'': Invalid audio listener position/velocity`. The player process had exited;
+its closed control session had no uncertain or unprocessed requests. The
+failure occurred before the new beacon asset was placed. Its cause is not
+proven. SceneAudio now attaches the measured elapsed time, listener world
+positions and computed velocity to this validation error instead of leaving
+the native failure without motion values. A focused offline regression checks
+the contextual error and confirms a failed synchronization preserves the last
+successful listener before a valid retry.
+
+Incremental `release` and `debug` preset builds succeeded on arm64 macOS. The
+focused offline SceneAudio check passed 1/1 in each configuration. A restricted
+Release run of the broader scene-audio set failed five native-device cases with
+`No backend`; with device access, the same 22/22 scene-audio checks passed in
+both configurations. Full CTest was not rerun. With the changed engine binary,
+the real Release editor reopened the
+saved private scene, checked three scripts and exported another native game.
+The relocated package ran with the source project hidden. It loaded the
+product-created save, completed the remaining normal resource interaction,
+placed a beacon containing the imported radio geometry, exited zero, then
+reloaded the same world with one beacon and no diagnostics. A further bounded
+native run turned for 1,200 frames plus movement and another turn without
+reproducing the audio fault. All later player control sessions closed without
+fault, uncertainty or unprocessed requests.
+
+Two profiled native runs still each captured a Render phase of about 1.01
+seconds followed by about 0.883 seconds of dropped fixed time. The audio
+failure and the Render wait may be related, but current evidence does not
+establish a cause. This stage improves diagnosis; it does not claim the audio
+failure or render hitch is fixed. Windows/Linux were not executed.
