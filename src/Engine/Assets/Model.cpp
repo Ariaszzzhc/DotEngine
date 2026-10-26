@@ -901,6 +901,28 @@ namespace Dot::Assets {
             }
           }
 
+          if (cgltf_find_accessor(&p, cgltf_attribute_type_tangent, 0)) {
+            require(cgltf_find_accessor(&p, cgltf_attribute_type_normal, 0),
+                    "Tangents require normals");
+
+            /** glTF exporters can round a valid tangent off its normal by a small
+             * amount. Bound that drift before publishing the canonical frame.
+             * glTF 导出器的小数舍入会让有效切线略偏离法线正交；先限制偏差，再发布规范坐标框架。 */
+            for (std::size_t j = 0; j < count; ++j) {
+              auto& vertex = output.mesh.vertices[j];
+              const Math::Vec3 tangent{vertex.tangent.x, vertex.tangent.y, vertex.tangent.z};
+              const auto parallel = static_cast<float>(Math::dot(tangent, vertex.normal));
+              require(std::abs(parallel) <= .025F,
+                      std::format("Model mesh {} primitive {} tangent {} is not orthogonal",
+                                  meshIndex, primitive, j));
+              const Math::Vec3 projected{tangent.x - parallel * vertex.normal.x,
+                                         tangent.y - parallel * vertex.normal.y,
+                                         tangent.z - parallel * vertex.normal.z};
+              const auto orthogonal = take(Math::normalized(projected));
+              vertex.tangent = {orthogonal.x, orthogonal.y, orthogonal.z, vertex.tangent.w};
+            }
+          }
+
           std::vector<std::uint32_t> sourceIndices;
 
           if (p.indices) {

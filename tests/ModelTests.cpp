@@ -5,6 +5,7 @@
 #include <cstring>
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -120,6 +121,44 @@ TEST_CASE("model.signed_normal_pixels_survive_import_without_clamping_or_replace
   REQUIRE_MESSAGE(model, (model ? "" : model.error().message));
   CHECK(Assets::decodeImage(model->images[image].png)->pixels == expected.pixels);
   CHECK(model->materials[0].normalTexture->sampling.colorSpace == Graphics::ColorSpace::Linear);
+}
+
+TEST_CASE("model.rounded_authored_tangent_is_bounded_and_orthogonalized") {
+  Fixture fixture;
+  auto source = fixture.source();
+  const auto document = Json::parse(source.readText("surface.gltf").value());
+  const auto tangentAccessor
+      = document["meshes"][0]["primitives"][0]["attributes"]["TANGENT"].get<std::size_t>();
+  const auto& accessor = document["accessors"][tangentAccessor];
+  const auto& view = document["bufferViews"][accessor["bufferView"].get<std::size_t>()];
+  const auto offset
+      = view.value("byteOffset", std::size_t{}) + accessor.value("byteOffset", std::size_t{});
+  auto bytes = source.readBytes("surface.bin").value();
+  REQUIRE(offset + 4 * sizeof(float) <= bytes.size());
+  const float rounded = .0002F;
+  std::memcpy(bytes.data() + offset + 2 * sizeof(float), &rounded, sizeof(float));
+  REQUIRE(source.writeAtomic("surface.bin", bytes));
+
+  auto loaded = Assets::loadModel(source, "surface.gltf", "assets/model");
+  REQUIRE_MESSAGE(loaded, (loaded ? "" : loaded.error().message));
+  const auto& tangent = loaded->primitives[0].mesh.vertices[0].tangent;
+  CHECK(tangent.x == doctest::Approx(1));
+  CHECK(tangent.y == doctest::Approx(0));
+  CHECK(tangent.z == 0);
+  CHECK(tangent.w == -1);
+  auto staging = Core::StagedDirectory::create(fixture.files).value();
+  REQUIRE(Assets::writeModel(staging.files().value(), *loaded));
+  CHECK(Assets::loadMesh(staging.files().value(), "meshes/0.dotmesh")->data.vertices[0].tangent.z
+        == 0);
+
+  const float parallelX = .8660254F;
+  const float parallelZ = .5F;
+  std::memcpy(bytes.data() + offset, &parallelX, sizeof(float));
+  std::memcpy(bytes.data() + offset + 2 * sizeof(float), &parallelZ, sizeof(float));
+  REQUIRE(source.writeAtomic("surface.bin", bytes));
+  auto invalid = Assets::loadModel(source, "surface.gltf", "assets/model");
+  REQUIRE_FALSE(invalid);
+  CHECK(invalid.error().message.find("not orthogonal") != std::string::npos);
 }
 
 TEST_CASE("model.invalid_ranges_uris_cycles_extensions_and_capacities_fail") {

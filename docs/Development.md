@@ -16787,3 +16787,29 @@ the compact bundles used in the product checks.
 Full CTest, the complete five-activity game route after this reimport,
 Windows/Linux and human OS pointer acceptance were not executed. The
 intermittent Metal drawable wait and broader world streaming remain open.
+
+## 2026-10-26 — Rounded authored model tangents / 作者切线舍入修复
+
+A CC0 skinned glTF model needed by the private game was rejected by the real
+Release editor with `Invalid vertex position/color/normal/UV/orthogonal unit
+tangent`. Its finite, unit-length authored normal/tangent pairs differed from
+orthogonality by at most about 0.000136 after decimal export rounding. The
+importer now bounds that small deviation before projecting an authored tangent
+onto the normal plane and normalizing it, preserving handedness. Larger
+deviations still fail with mesh/primitive/vertex context. The native vertex
+validator and asset format remain unchanged.
+
+A CPU regression checks acceptance, exact orthogonalized native output and
+rejection of a strongly skewed tangent. Incremental `release` and `debug`
+preset builds of `DotTests` passed; the Release `DotEditor` build also passed.
+The focused model/geometry CTest selection passed 39/39 in both Release/NDEBUG
+and Debug on arm64 macOS with the actual Metal environment. An initial
+restricted-environment run had two offscreen Metal failures; both passed on
+rerun in the real macOS environment. No configure or new build tree was used.
+
+The real Release editor imported and published the unchanged source model,
+authored its native scene, checked the private game's scripts, ran Play with
+the skinned model and its idle/walk/attack clips, and exported a native game.
+A relocated standalone game launched and reloaded a seed with the source
+project hidden. These product checks validate this importer case; full CTest,
+Windows/Linux, every glTF exporter and human pointer interaction were not run.
