@@ -16745,3 +16745,45 @@ recovery operation. That client error did not alter the published model files.
 Full CTest, the complete five-activity route after the visual update,
 Windows/Linux execution and human OS pointer acceptance were not repeated.
 The separate intermittent Metal drawable wait remains unresolved.
+
+## 2026-10-26 — Shared-accessor skin compaction / 共享访问器蒙皮压缩
+
+The actual private game's male GLB had 16 indexed material primitives sharing
+one 20,913-position accessor. Their disjoint index subsets used 20,913 unique
+vertices in total, yet the importer emitted that full accessor and the same
+skin weights for every primitive. The female model had the same layout pattern.
+This inflated native mesh/skin files and GPU scene residency. The importer now
+validates every source accessor as before, tracks the original decoded-source
+vertex bound, and remaps each indexed primitive to only its referenced vertices
+and matching skin influences in source order. Source indices outside the valid
+range still fail; nonindexed/full-range primitives keep their original order.
+Flat-normal expansion consumes the remapped indices and influences.
+
+A permanent CPU regression imports two skinned material primitives sharing
+one accessor but using disjoint triangles. It checks compact native vertices,
+indices, skin weights, written bundle files, missing-normal expansion and
+out-of-range rejection. Incremental `release` and `debug` preset builds
+succeeded without configure or another build tree. After the final in-place
+compaction refinement, all 37 focused model import/skin/animation/reimport/
+offscreen GPU tests passed in each configuration. A final material-split
+assertion in the same regression passed 1/1 again in both.
+
+The real Release editor used reviewed reimport on the game's two authored
+character bundles. Only 32 male and 30 female mesh/skin files changed;
+model scenes, materials, images, clips and source GLBs did not. Those changed
+files fell from 43,300,480 to 3,147,520 bytes for the male and from 38,923,632
+to 3,015,536 bytes for the female. The editor then reopened the saved scene,
+checked three scripts, entered Play for both genders, captured real viewport
+pixels with one selected animated model visible and no diagnostics, and exported
+a native package. A relocated player ran male and female seeds while the
+authoring project was hidden; a later process reloaded the male world at its
+saved moved position `z=7.068334579467773`. Checked editor/player processes
+exited zero; closed control sessions had no fault, uncertain or unprocessed
+requests and were acknowledged and cleared. The source project was restored.
+With that final importer binary, a fresh real-editor review of both source GLBs
+reported zero changed native files, confirming byte-for-byte agreement with
+the compact bundles used in the product checks.
+
+Full CTest, the complete five-activity game route after this reimport,
+Windows/Linux and human OS pointer acceptance were not executed. The
+intermittent Metal drawable wait and broader world streaming remain open.

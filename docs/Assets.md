@@ -92,6 +92,14 @@ remaining project catalog capacity. Accessor arithmetic/alignment and sparse ind
 ordering are checked before library reads. Callers serialize source/filesystem edits;
 this is not hostile-race isolation or crash-durable publishing.
 
+Indexed material primitives may share a full source accessor while referencing
+disjoint vertices. Import validates the entire source accessor, then keeps only
+referenced vertices and their matching skin weights in source order. It remaps
+triangle indices before flat-normal expansion and preserves the decoded-source
+and published-geometry budgets. Nonindexed/full-range primitives keep their
+authored vertex order. This avoids repeating a character's entire vertex/skin
+array for every material without changing its node, material or animation layout.
+
 Importer prepares native `meshes/*.dotmesh`, `materials/*.dotmaterial`, `images/*.png`
 and `model.dotscene`, plus `model.dotmodel` node bindings, any `skins/*.dotskin`
 and native animation clips in an owned sibling directory, then publishes without replacing

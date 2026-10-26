@@ -797,7 +797,7 @@ namespace Dot::Assets {
 
       std::vector<std::vector<std::uint32_t>> meshPrimitives(data->meshes_count);
       std::vector<std::vector<Animation::SkinInfluence>> primitiveInfluences;
-      std::size_t vertices{}, indices{};
+      std::size_t decodedVertices{}, vertices{}, indices{};
 
       for (std::size_t meshIndex = 0; meshIndex < data->meshes_count; ++meshIndex) {
         const auto& mesh = data->meshes[meshIndex];
@@ -811,9 +811,10 @@ namespace Dot::Assets {
                       || p.type == cgltf_primitive_type_triangle_fan,
                   "Only triangle model primitives are supported");
           const auto* position = cgltf_find_accessor(&p, cgltf_attribute_type_position, 0);
-          require(position && position->count <= 1000000 - vertices,
+          require(position && position->count <= 1000000 - decodedVertices,
                   "Model vertex budget exceeded");
           const auto count = position->count;
+          decodedVertices += count;
           const auto integer = [](cgltf_component_type c) {
             return c == cgltf_component_type_r_8 || c == cgltf_component_type_r_8u
                    || c == cgltf_component_type_r_16 || c == cgltf_component_type_r_16u;
@@ -944,6 +945,51 @@ namespace Dot::Assets {
 
           require(!output.mesh.indices.empty() && output.mesh.indices.size() <= 3000000 - indices,
                   "Model index budget exceeded");
+
+          /** Material primitives can share a complete source accessor but use
+           * disjoint index ranges. Retain source validation while publishing only
+           * referenced vertices and matching skin weights in source order.
+           * 材质分片可共享完整源访问器却只引用互不相交的索引；完整验证源数据，发布时按源顺序
+           * 仅保留被引用顶点及对应蒙皮权重。 */
+          std::vector<std::uint32_t> remap(count, std::numeric_limits<std::uint32_t>::max());
+          std::size_t used{};
+
+          for (const auto index : output.mesh.indices) {
+            if (remap[index] == std::numeric_limits<std::uint32_t>::max()) {
+              remap[index] = 0;
+              ++used;
+            }
+          }
+
+          if (used < count) {
+            std::size_t next{};
+
+            for (std::size_t old = 0; old < count; ++old) {
+              if (remap[old] != std::numeric_limits<std::uint32_t>::max()) {
+                remap[old] = static_cast<std::uint32_t>(next);
+
+                if (next != old) {
+                  output.mesh.vertices[next] = std::move(output.mesh.vertices[old]);
+
+                  if (!skinWeights.empty()) {
+                    skinWeights[next] = std::move(skinWeights[old]);
+                  }
+                }
+
+                ++next;
+              }
+            }
+
+            for (auto& index : output.mesh.indices) {
+              index = remap[index];
+            }
+
+            output.mesh.vertices.resize(used);
+
+            if (!skinWeights.empty()) {
+              skinWeights.resize(used);
+            }
+          }
 
           if (!cgltf_find_accessor(&p, cgltf_attribute_type_normal, 0)) {
             require(!cgltf_find_accessor(&p, cgltf_attribute_type_tangent, 0),

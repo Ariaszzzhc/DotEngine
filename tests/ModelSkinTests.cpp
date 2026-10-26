@@ -15,6 +15,7 @@ import Dot.Animation.SceneSkin;
 import Dot.Animation.SkinFiles;
 import Dot.Assets.Model;
 import Dot.Assets.ModelBundle;
+import Dot.Assets.Mesh;
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
@@ -106,6 +107,70 @@ TEST_CASE("model.skin_gltf_glb_own_eight_weights_inverse_binds_and_nontraversal_
     CHECK(loaded->skins[0].data.description().value() == data);
     CHECK(loaded->animations[0].sample(1));
   }
+}
+
+TEST_CASE("model.shared_indexed_accessors_compact_material_skin_vertices") {
+  Fixture fixture;
+  auto source = fixture.imported();
+  const auto sourceSkin = source.skins[0].data.description().value();
+  auto root = fixture.root();
+  auto& primitives = root["meshes"][0]["primitives"];
+  auto second = primitives[0];
+  primitives[0]["indices"] = accessor(root, std::vector<std::uint16_t>{0, 1, 2}, 5123, "SCALAR", 1);
+  second["indices"] = accessor(root, std::vector<std::uint16_t>{14, 15, 16}, 5123, "SCALAR", 1);
+  root["materials"].push_back(root["materials"][0]);
+  second["material"] = 1;
+  primitives.push_back(std::move(second));
+  auto loaded = fixture.load(root);
+  REQUIRE_MESSAGE(loaded, (loaded ? "" : loaded.error().message));
+  REQUIRE(loaded->primitives.size() == 2);
+  REQUIRE(loaded->skins.size() == 2);
+  REQUIRE(loaded->nodes[1].parts.size() == 2);
+  CHECK(loaded->primitives[0].material == 0);
+  CHECK(loaded->primitives[1].material == 1);
+
+  for (std::size_t part = 0; part < 2; ++part) {
+    const auto& mesh = loaded->primitives[part].mesh;
+    const auto& skin = loaded->skins[part].data.description().value()->vertices;
+    REQUIRE(mesh.vertices.size() == 3);
+    REQUIRE(skin.size() == 3);
+    CHECK(mesh.indices == std::vector<std::uint32_t>{0, 1, 2});
+
+    for (std::size_t vertex = 0; vertex < 3; ++vertex) {
+      const auto original = part == 0 ? vertex : vertex + 14;
+      CHECK(mesh.vertices[vertex].position
+            == source.primitives[0].mesh.vertices[original].position);
+      CHECK(skin[vertex].joints == sourceSkin->vertices[original].joints);
+      CHECK(skin[vertex].weights == sourceSkin->vertices[original].weights);
+    }
+  }
+
+  auto staging = Core::StagedDirectory::create(fixture.files).value();
+  REQUIRE(Assets::writeModel(staging.files().value(), *loaded));
+  CHECK(Assets::loadMesh(staging.files().value(), "meshes/0.dotmesh")->data.vertices.size() == 3);
+  CHECK(Assets::loadMesh(staging.files().value(), "meshes/1.dotmesh")->data.vertices.size() == 3);
+  auto savedSkin = Animation::loadSkin(staging.files().value(), "skins/0.dotskin");
+  REQUIRE(savedSkin);
+  CHECK(savedSkin->description().value()->vertices.size() == 3);
+
+  auto flat = root;
+
+  for (auto& primitive : flat["meshes"][0]["primitives"]) {
+    primitive["attributes"].erase("NORMAL");
+    primitive["attributes"].erase("TANGENT");
+  }
+
+  auto expanded = fixture.load(flat);
+  REQUIRE_MESSAGE(expanded, (expanded ? "" : expanded.error().message));
+
+  for (std::size_t part = 0; part < 2; ++part) {
+    CHECK(expanded->primitives[part].mesh.vertices.size() == 3);
+    CHECK(expanded->skins[part].data.description().value()->vertices.size() == 3);
+  }
+
+  root["meshes"][0]["primitives"][1]["indices"]
+      = accessor(root, std::vector<std::uint16_t>{14, 18, 16}, 5123, "SCALAR", 1);
+  CHECK_FALSE(fixture.load(root));
 }
 
 TEST_CASE("model.skin_four_weights_quantized_byte_short_and_mixed_sets_keep_normalization") {
