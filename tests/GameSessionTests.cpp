@@ -394,6 +394,43 @@ export class Mover extends ScriptComponent {
   good(session.close());
 }
 
+TEST_CASE("game_session_audio_velocity_carries_variable_yaw_until_physics_publishes_it") {
+  Fixture fixture(false);
+  auto scene = fixture.project.loadStartup().value();
+  const auto camera = scene.entities()->front().id;
+  const auto entities = scene.entities().value();
+  const auto cube = std::ranges::find(entities, "Cube", &Dot::World::EntityInfo::name);
+  REQUIRE(cube != entities.end());
+  REQUIRE(scene.setCharacterController(cube->id, Dot::World::CharacterController{}));
+  REQUIRE(scene.setParent(camera, cube->id));
+  REQUIRE(scene.setTransform(camera, {{0.55F, 2.15F, 3.4F}}));
+  REQUIRE(scene.setAudioListener(camera, Dot::World::AudioListener{true}));
+  REQUIRE(fixture.project.saveStartup(scene));
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts", R"ts(
+import {audio, ScriptComponent} from 'dot:engine';
+export class Mover extends ScriptComponent {
+  #yaw = 0;
+  onUpdate(seconds: number): void {
+    const velocity = audio.listener().velocity;
+    this.self.name = Math.hypot(velocity.x, velocity.z) > 1 ? 'moving' : 'stationary';
+    this.#yaw += 90 * seconds;
+    this.self.setCharacterYaw(this.#yaw);
+  }
+}
+)ts"));
+  GameSessionConfig config;
+  config.physics.simulation.gravity = {};
+  auto session = fixture.session(config);
+  good(session.start());
+  good(session.update(1));
+  good(session.fixedUpdate());
+  good(session.update(1.0 / 60));
+  CHECK(session.stats()->state == SessionState::Running);
+  good(session.update(0));
+  CHECK(actor(session).name == "moving");
+  good(session.close());
+}
+
 TEST_CASE("game_session_hot_reload_migrates_scripts_and_retains_native_motion_audio") {
   Fixture fixture;
   fixture.controller();

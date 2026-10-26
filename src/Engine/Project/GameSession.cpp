@@ -119,6 +119,7 @@ namespace Dot::Project {
     std::uint64_t m_updates{};
     std::uint64_t m_lifetimeFixedSteps{};
     double m_audioFixedSeconds{};
+    double m_audioPreviousUpdateSeconds{};
     std::shared_ptr<const Origin> m_origin;
     std::optional<Script::InputSource> m_input;
     std::optional<Script::PhysicsSource> m_physics;
@@ -165,6 +166,9 @@ namespace Dot::Project {
     }
 
     auto retireServices() noexcept -> void {
+      m_audioFixedSeconds = 0;
+      m_audioPreviousUpdateSeconds = 0;
+
       if (m_preparation) {
         m_preparation->requestStop();
       }
@@ -445,9 +449,14 @@ namespace Dot::Project {
             return std::unexpected(animated.error());
           }
 
-          /** Physics may advance several fixed steps before a short render frame.
-           * 物理可能在短渲染帧前推进多个固定步，音频速度须按累计模拟时长计算。 */
-          auto synchronized = m_audio->synchronize(std::max(seconds, m_audioFixedSeconds));
+          /** Variable scripts can set native character yaw after this frame's
+           * physics synchronization. Its listener pose appears at the next
+           * fixed step, so that sample retains the script's elapsed interval.
+           * 变量脚本可能在本帧物理同步后设置角色朝向；监听器位姿到下一固定步才发布，
+           * 因此下一次音频采样必须保留该脚本更新经过的时间。 */
+          const auto deferredSeconds = m_audioFixedSeconds > 0 ? m_audioPreviousUpdateSeconds : 0;
+          const auto audioSeconds = std::max({seconds, m_audioFixedSeconds, deferredSeconds});
+          auto synchronized = m_audio->synchronize(audioSeconds);
 
           if (!synchronized) {
             m_state = SessionState::Faulted;
@@ -456,6 +465,7 @@ namespace Dot::Project {
           }
 
           m_audioFixedSeconds = 0;
+          m_audioPreviousUpdateSeconds = paused && !stepping ? 0 : simulationSeconds;
         }
 
         if (!paused || stepping) {
@@ -2110,6 +2120,7 @@ namespace Dot::Project {
         }
 
         m_impl->m_audioFixedSeconds = 0;
+        m_impl->m_audioPreviousUpdateSeconds = 0;
 
         auto activated = m_impl->m_audio->beginPlayback();
 

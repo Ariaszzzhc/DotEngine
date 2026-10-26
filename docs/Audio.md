@@ -330,8 +330,16 @@ previous positions. Tiny positive timesteps use double division before float
 conversion; stationary poses remain valid. Doppler still requires its opt-in factor.
 GameSession accumulates successful fixed-step time between audio synchronizations.
 When a render update follows multiple fixed steps but reports a shorter delta,
-the derived speed uses the larger elapsed time. A genuine over-speed pose still
-fails the same 100 m/s validation.
+the derived speed uses the larger elapsed time. It also retains the preceding
+variable-update interval for one frame: a script may set character yaw after
+physics has published the current pose, so the listener's new world position
+appears only after the next fixed step. The audio sample uses the largest of
+the current interval, accumulated fixed time and that preceding interval when
+a fixed step actually publishes the delayed pose. A zero-time synchronization
+without a fixed step remains an explicit motion reset for direct scene edits.
+This prevents a long variable update from being divided by only the following
+short fixed step. A genuine over-speed pose still fails the same 100 m/s
+validation.
 An invalid listener sample reports its elapsed time, current/previous world
 positions and derived velocity with the owning entity so intermittent product
 faults can be distinguished from invalid source content.

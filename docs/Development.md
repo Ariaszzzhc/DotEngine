@@ -16630,3 +16630,48 @@ seconds followed by about 0.883 seconds of dropped fixed time. The audio
 failure and the Render wait may be related, but current evidence does not
 establish a cause. This stage improves diagnosis; it does not claim the audio
 failure or render hitch is fixed. Windows/Linux were not executed.
+
+## 2026-10-26 — Delayed character yaw audio timebase / 延迟朝向音频时间基准
+
+The real relocated Project Wasteland player reproduced the audio fault while
+turning, before beacon placement. The diagnostic context recorded a 0.016667 s
+sample with listener positions `[4.539748, 2.15, 13.365791]` and
+`[6.561444, 2.15, 12.642491]`, yielding 121.30 m/s on X after long Render
+waits. GameSession had synchronized audio before the previous variable script
+update's character-yaw intent became a scene pose; the next fixed step
+published the accumulated turn but supplied only its own short duration.
+
+GameSession now retains the preceding variable-update interval for the next
+audio sample **when a fixed step publishes a deferred native pose**. It uses
+the maximum of that interval, accumulated fixed-step time and the current
+update interval. An update with zero elapsed time and no intervening fixed
+step still resets motion for direct authored scene edits. A device-free
+GameSession regression creates a native character with a child audio listener,
+sets yaw during a one-second variable update and observes it after a short
+fixed step. It failed with the measured over-speed error before the fix and
+passes afterward. The existing Feature Lab scene-travel test exposed an
+overbroad first patch that broke zero-time edits; the fixed-step condition
+restored that contract. Both focused tests pass in Debug and Release.
+
+On arm64 macOS, the existing `release` and `debug` preset builds succeeded.
+Full CTest passed 1738/1738 in Release/NDEBUG (38.67 seconds) and Debug
+(272.86 seconds) with actual audio/GPU access. After formatting, both preset
+builds and the two focused yaw/zero-time scene checks passed again. No
+configure or ad hoc build tree was used. The real Release editor checked all
+three private-game scripts,
+entered Play on a new seed, turned for 600 normal input frames without
+diagnostics, saved and exported the game. The relocated native package ran
+while the source `Game/` folder was hidden. It resumed the product-created
+world from the prior audio failure, turned left and right for 600 frames each,
+gathered the remaining polymer, placed the normal-mapped beacon, exited zero
+and reloaded one persisted beacon with five radio mesh children and no script
+diagnostics. Both successful player processes exited zero; closed control
+sessions had no fault, uncertainty or unprocessed requests and were ACKed and
+cleared. The prior failed player also exited and its control session closed
+without uncertain or unprocessed requests before cleanup.
+
+This directly fixes the measured delayed-yaw audio timebase error. It does
+not establish that every audio failure is gone. The native profile still
+captured a 1,031.973 ms Render phase and 900 ms of dropped fixed time; that
+intermittent wait remains unresolved. Windows/Linux and human pointer play
+were not executed; no engine distribution package was made.
